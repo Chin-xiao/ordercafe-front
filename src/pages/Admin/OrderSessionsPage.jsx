@@ -1,241 +1,192 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import api from '../../api/axios';
 
 export default function OrderSessionsPage() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedSession, setSelectedSession] = useState(null);
+  const [showModal, setShowModal] = useState(false);
   
-  // Form state for creating a session
+  // New session form state
   const [title, setTitle] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
-  const [error, setError] = useState('');
-
-  // Fetch sessions on mount
-  useEffect(() => {
-    fetchSessions();
-  }, []);
 
   const fetchSessions = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/admin/sessions');
-      // Handles both paginated Laravel responses (.data) and raw arrays
-      setSessions(response.data.data || response.data);
+      const res = await api.get('/admin/order-sessions');
+      setSessions(res.data.data || res.data);
     } catch (err) {
-      console.error('Failed to load sessions', err);
+      console.error('Failed to load order sessions', err);
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    fetchSessions();
+  }, []);
+
   const handleCreateSession = async (e) => {
     e.preventDefault();
-    setError('');
     try {
-      await api.post('/admin/sessions', {
+      await api.post('/admin/order-sessions', {
         title,
-        expires_at: expiresAt || null,
+        expires_at: expiresAt,
       });
       setTitle('');
       setExpiresAt('');
-      setShowCreateModal(false);
+      setShowModal(false);
       fetchSessions();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to create session');
+      alert(err.response?.data?.message || 'Failed to create session.');
     }
   };
 
   const handleStartSession = async (id) => {
     try {
-      await api.post(`/admin/sessions/${id}/start`);
+      await api.post(`/admin/order-sessions/${id}/start`);
+      alert('Order session started! Telegram bot has announced it to the group.');
       fetchSessions();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to start session');
+      alert(err.response?.data?.message || 'Failed to start session.');
     }
   };
 
   const handleCloseSession = async (id) => {
+    if (!window.confirm('Close this session? This will lock customer orders and dispatch the summary to Telegram.')) return;
     try {
-      await api.post(`/admin/sessions/${id}/close`);
+      await api.post(`/admin/order-sessions/${id}/close`);
+      alert('Session closed and Telegram summary dispatched successfully!');
       fetchSessions();
-      if (selectedSession && selectedSession.id === id) {
-        setSelectedSession(null);
-      }
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to close session');
+      alert(err.response?.data?.message || 'Failed to close session.');
     }
   };
 
-  const handleViewDetails = async (id) => {
-    try {
-      const response = await api.get(`/admin/sessions/${id}`);
-      setSelectedSession(response.data.data);
-    } catch (err) {
-      alert('Failed to load session details');
+  const getStatusBadge = (status) => {
+    switch (status?.toUpperCase()) {
+      case 'OPEN':
+        return <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full animate-pulse">🟢 OPEN</span>;
+      case 'CLOSED':
+        return <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">🔴 CLOSED</span>;
+      default:
+        return <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-bold rounded-full">⏳ DRAFT</span>;
     }
   };
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Order Sessions Control</h1>
+        <h1 className="text-2xl font-bold text-gray-800">Order Sessions Management</h1>
         <button
-          onClick={() => setShowCreateModal(true)}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition"
+          onClick={() => setShowModal(true)}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-lg text-sm shadow transition"
         >
           + Create New Session
         </button>
       </div>
 
-      {/* Sessions Table */}
-      <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-100">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Creator</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expires At</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {loading ? (
-              <tr>
-                <td colSpan="5" className="px-6 py-4 text-center text-gray-500">Loading sessions...</td>
-              </tr>
-            ) : sessions.length === 0 ? (
-              <tr>
-                <td colSpan="5" className="px-6 py-4 text-center text-gray-500">No order sessions found.</td>
-              </tr>
-            ) : (
-              sessions.map((session) => (
-                <tr key={session.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{session.title}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                      session.status === 'open' ? 'bg-green-100 text-green-800' :
-                      session.status === 'closed' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {session.status || 'Draft'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {session.creator?.name || 'Admin'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {session.expires_at ? new Date(session.expires_at).toLocaleString() : 'Never'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                    <button
-                      onClick={() => handleViewDetails(session.id)}
-                      className="text-indigo-600 hover:text-indigo-900"
-                    >
-                      View
-                    </button>
-                    {session.status !== 'open' && session.status !== 'closed' && (
-                      <button
-                        onClick={() => handleStartSession(session.id)}
-                        className="text-green-600 hover:text-green-900"
-                      >
-                        Start
-                      </button>
-                    )}
-                    {session.status === 'open' && (
-                      <button
-                        onClick={() => handleCloseSession(session.id)}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        Close
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Session Details Modal */}
-      {selectedSession && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-800">Session: {selectedSession.title}</h2>
-              <button onClick={() => setSelectedSession(null)} className="text-gray-400 hover:text-gray-600">✕</button>
-            </div>
-            <div className="space-y-4">
-              <p><strong>Status:</strong> {selectedSession.status}</p>
-              <p><strong>Created By:</strong> {selectedSession.creator?.name}</p>
-              <h3 className="font-semibold text-lg mt-4">Orders Placed ({selectedSession.orders?.length || 0})</h3>
-              <div className="border rounded-lg p-3 bg-gray-50 space-y-2">
-                {selectedSession.orders?.length === 0 ? (
-                  <p className="text-sm text-gray-500">No orders in this session yet.</p>
-                ) : (
-                  selectedSession.orders?.map((order) => (
-                    <div key={order.id} className="border-b pb-2 text-sm">
-                      <div className="flex justify-between font-medium">
-                        <span>User: {order.user?.name || 'Telegram User'}</span>
-                        <span>Total: ${order.total_price}</span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Create Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h2 className="text-xl font-bold mb-4">Create Order Session</h2>
-            {error && <div className="mb-4 text-sm text-red-600 bg-red-50 p-2 rounded">{error}</div>}
-            <form onSubmit={handleCreateSession} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Session Title</label>
+      {/* Create Session Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-lg">
+            <h3 className="text-lg font-bold text-gray-800 mb-4">Create Order Session</h3>
+            <form onSubmit={handleCreateSession}>
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Session Title (e.g., Lunch Order)</label>
                 <input
                   type="text"
                   required
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:ring-indigo-500 focus:border-indigo-500"
-                  placeholder="e.g. Morning Coffee Run"
+                  placeholder="Lunch Order #1024"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Expires At (Optional)</label>
+              <div className="mb-6">
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Expiration Time</label>
                 <input
                   type="datetime-local"
+                  required
                   value={expiresAt}
                   onChange={(e) => setExpiresAt(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
                 />
               </div>
-              <div className="flex justify-end space-x-2 pt-2">
+              <div className="flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-50"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2 text-gray-600 text-sm font-semibold hover:bg-gray-100 rounded-lg"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow"
                 >
-                  Save as Draft
+                  Save Session
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Sessions Table */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        {loading ? (
+          <p className="p-6 text-gray-500 text-center">Loading sessions...</p>
+        ) : (
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-gray-200 text-xs uppercase text-gray-500 font-semibold bg-gray-50">
+                <th className="p-4">Session Title</th>
+                <th className="p-4">Order Number</th>
+                <th className="p-4">Status</th>
+                <th className="p-4">Expires At</th>
+                <th className="p-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 text-sm">
+              {sessions.map((session) => (
+                <tr key={session.id} className="hover:bg-gray-50 transition">
+                  <td className="p-4 font-semibold text-gray-800">{session.title}</td>
+                  <td className="p-4 font-mono text-gray-600">{session.order_number}</td>
+                  <td className="p-4">{getStatusBadge(session.status)}</td>
+                  <td className="p-4 text-gray-600">{new Date(session.expires_at).toLocaleString()}</td>
+                  <td className="p-4 text-right space-x-2">
+                    {session.status === 'DRAFT' && (
+                      <button
+                        onClick={() => handleStartSession(session.id)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg text-xs shadow transition"
+                      >
+                        🚀 Start Order
+                      </button>
+                    )}
+                    {session.status === 'OPEN' && (
+                      <button
+                        onClick={() => handleCloseSession(session.id)}
+                        className="bg-red-600 hover:bg-red-700 text-white font-medium px-3 py-1.5 rounded-lg text-xs shadow transition"
+                      >
+                        🛑 Close Order
+                      </button>
+                    )}
+                    {session.status === 'CLOSED' && (
+                      <span className="text-xs text-gray-400 font-medium italic">Completed</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {sessions.length === 0 && (
+                <tr>
+                  <td colSpan="5" className="p-8 text-center text-gray-500">No order sessions created yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

@@ -30,6 +30,12 @@ export default function AdminLayout() {
           <Link to="/admin/reports" className="block px-4 py-2.5 rounded hover:bg-slate-800 hover:text-white transition">
             📈 Sales Reports
           </Link>
+          <Link 
+  to="/admin/telegram-settings" 
+  className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition"
+>
+  <span>🤖 Telegram Bot</span>
+</Link>
         </nav>
         <div className="p-4 border-t border-slate-800">
           <button 

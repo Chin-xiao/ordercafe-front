@@ -6,6 +6,7 @@ import ProductsPage from './pages/Admin/ProductsPage';
 import ReportsPage from './pages/Admin/ReportsPage';
 import CartPage from './pages/CartPage';
 import OrderSessionsPage from './pages/Admin/OrderSessionsPage'; // Ensure this component exists
+import TelegramSettingsPage from './pages/Admin/TelegramSettingsPage'; // Ensure this component exists
 // Import your Order Sessions component if you have it, e.g.:
 // import OrderSessionsPage from './pages/Admin/OrderSessionsPage';
 
@@ -24,7 +25,7 @@ function App() {
           <Route path="order-sessions" element={<OrderSessionsPage />} />
           <Route path="products" element={<ProductsPage />} />
           <Route path="reports" element={<ReportsPage />} />
-          
+          <Route path="/admin/telegram-settings" element={<TelegramSettingsPage />} />
         </Route>
       </Routes>
     </Router>
