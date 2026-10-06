@@ -1,23 +1,40 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import AdminLayout from './layouts/AdminLayout';
 import Dashboard from './pages/Admin/Dashboard';
 import ProductsPage from './pages/Admin/ProductsPage';
 import ReportsPage from './pages/Admin/ReportsPage';
+import OrderSessionsPage from './pages/Admin/OrderSessionsPage';
+import TelegramSettingsPage from './pages/Admin/TelegramSettingsPage';
 import CartPage from './pages/CartPage';
-import OrderSessionsPage from './pages/Admin/OrderSessionsPage'; // Ensure this component exists
-import TelegramSettingsPage from './pages/Admin/TelegramSettingsPage'; // Ensure this component exists
-// Import your Order Sessions component if you have it, e.g.:
-// import OrderSessionsPage from './pages/Admin/OrderSessionsPage';
+import LoginPage from './pages/Admin/LoginPage';
+import RegisterPage from './pages/Admin/RegisterPage';
+
+// Helper to check if the app is running inside Telegram
+const isTelegramMiniApp = () => {
+  return window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
+};
+
+// Smart Root Component: Telegram users see the shop; regular browsers go to Login
+const SmartRoot = () => {
+  if (isTelegramMiniApp()) {
+    return <CartPage />;
+  }
+  return <Navigate to="/admin/login" replace />;
+};
 
 function App() {
   return (
     <Router>
       <Routes>
-        {/* Customer / Mini App View */}
-        <Route path="/" element={<CartPage />} />
+        {/* Smart Root (Telegram -> Mini App | Browser -> Admin Login) */}
+        <Route path="/" element={<SmartRoot />} />
 
-        {/* Admin Dashboard Routes */}
+        {/* Public Admin Authentication Routes */}
+        <Route path="/admin/login" element={<LoginPage />} />
+        <Route path="/admin/register" element={<RegisterPage />} />
+
+        {/* Admin Dashboard Routes (Protected layout) */}
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Dashboard />} />
           <Route path="dashboard" element={<Dashboard />} />
@@ -25,8 +42,14 @@ function App() {
           <Route path="order-sessions" element={<OrderSessionsPage />} />
           <Route path="products" element={<ProductsPage />} />
           <Route path="reports" element={<ReportsPage />} />
-          <Route path="/admin/telegram-settings" element={<TelegramSettingsPage />} />
+          <Route path="telegram-settings" element={<TelegramSettingsPage />} />
         </Route>
+
+        {/* Explicit Customer Menu Fallback Route */}
+        <Route path="/menu" element={<CartPage />} />
+
+        {/* Catch-all redirect */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
   );
