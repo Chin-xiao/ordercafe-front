@@ -8,12 +8,21 @@ const api = axios.create({
   },
 });
 
-// Automatically inject Telegram initData into every request header
+// Automatically inject either Admin Sanctum Token or Telegram Init-Data
 api.interceptors.request.use((config) => {
-  const initData = getInitData();
-  if (initData) {
-    config.headers['X-Telegram-Init-Data'] = initData;
+  // Check if an admin token exists in localStorage (used by the admin panel)
+  const adminToken = localStorage.getItem('token'); // Adjust key if your app uses something else like 'admin_token'
+  
+  if (adminToken) {
+    config.headers.Authorization = `Bearer ${adminToken}`;
+  } else {
+    // Otherwise, fallback to Telegram InitData for customer Mini App requests
+    const initData = getInitData();
+    if (initData) {
+      config.headers['X-Telegram-Init-Data'] = initData;
+    }
   }
+
   return config;
 }, (error) => {
   return Promise.reject(error);
