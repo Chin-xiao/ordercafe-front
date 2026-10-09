@@ -4,15 +4,27 @@ export const getApiErrorMessage = (error, fallback) => {
   const response = error.response;
   if (response) {
     const message = response.data?.message;
-    if (typeof message === 'string' && message.trim()) return message;
-
     const validationMessage = Object.values(response.data?.errors || {})
       .flat()
       .find((item) => typeof item === 'string');
-    if (validationMessage) return validationMessage;
 
-    if (response.status === 401) return 'Your session has expired. Please sign in again.';
-    if (response.status === 403) return 'You are not authorized to perform this action.';
+    if (response.status === 401) {
+      return 'Authentication failed (401). Sign in again or reopen the Mini App from Telegram.';
+    }
+    if (response.status === 403) {
+      return 'The server denied this action (403). Check your account permissions and Telegram verification.';
+    }
+    if (response.status === 404) {
+      return message || 'The requested resource was not found (404). Check that a current order session exists.';
+    }
+    if (response.status === 422) {
+      return validationMessage || message || 'The server rejected the submitted data (422). Check the required fields.';
+    }
+    if (response.status >= 500) {
+      return message || `The Laravel API encountered a server error (HTTP ${response.status}). Please try again later.`;
+    }
+    if (typeof message === 'string' && message.trim()) return message;
+    if (validationMessage) return validationMessage;
     return `${fallback} (HTTP ${response.status})`;
   }
 

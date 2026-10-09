@@ -1,33 +1,38 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../../api/axios';
 import { getApiErrorMessage } from '../../api/errors';
 
 export default function MyOrderPage() {
-  const [order, setOrder] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const location = useLocation();
+  const initialOrder = location.state?.order;
+  const [order, setOrder] = useState(initialOrder || null);
+  const [loading, setLoading] = useState(!initialOrder);
   const [error, setError] = useState('');
 
-  const fetchMyOrder = async () => {
+  const fetchMyOrder = useCallback(async () => {
     try {
       setLoading(true);
-      
-      // Fetch the current user's active order for the active session
+      setError('');
       const response = await api.get('/mini-app/my-order');
-      
       setOrder(response.data.data || response.data);
     } catch (err) {
       setError(getApiErrorMessage(err, 'No active order found for this session.'));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchMyOrder();
-    // Poll every 10 seconds to check if the admin updates order status
+    const initialFetch = initialOrder
+      ? null
+      : window.setTimeout(() => { fetchMyOrder(); }, 0);
     const interval = setInterval(fetchMyOrder, 10000);
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      if (initialFetch !== null) window.clearTimeout(initialFetch);
+      clearInterval(interval);
+    };
+  }, [fetchMyOrder, initialOrder]);
 
   const getStatusBadge = (status) => {
     switch (status?.toLowerCase()) {
@@ -71,6 +76,13 @@ export default function MyOrderPage() {
           </button>
         </div>
       ) : (
+        <>
+        {error && (
+          <div role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            Showing the order returned at checkout. Latest status could not be refreshed: {error}
+            <button onClick={fetchMyOrder} className="ml-1 font-semibold underline">Retry</button>
+          </div>
+        )}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
           
           {/* Order Meta Header */}
@@ -126,6 +138,7 @@ export default function MyOrderPage() {
             Refresh Status 🔄
           </button>
         </div>
+        </>
       )}
     </div>
   );

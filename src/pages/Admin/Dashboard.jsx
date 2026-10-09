@@ -2,11 +2,14 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../api/axios'; // Axios client with bearer auth
 import { getApiErrorMessage } from '../../api/errors';
+import { formatDateTime, unwrapApiData } from '../../utils/orderSession';
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [closing, setClosing] = useState(false);
 
   const fetchDashboard = async () => {
     try {
@@ -27,18 +30,48 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    fetchDashboard();
+    const initialFetch = window.setTimeout(fetchDashboard, 0);
+    return () => window.clearTimeout(initialFetch);
   }, []);
 
   const handleCloseSession = async (sessionId) => {
+    if (closing) return;
     if (!window.confirm('Are you sure you want to close this session? This will lock ordering and notify Telegram.')) return;
 
+    setClosing(true);
+    setError('');
+    setNotice('');
     try {
-      await api.post(`/admin/order-sessions/${sessionId}/close`);
-      alert('Order session closed and Telegram summary dispatched successfully!');
-      fetchDashboard();
+      const response = await api.post(`/admin/order-sessions/${sessionId}/close`);
+      const result = unwrapApiData(response) || {};
+      if (result.success === false) {
+        throw new Error(result.message || 'The backend did not confirm that the session closed.');
+      }
+      const deliveryFlag = [
+        'telegram_message_sent',
+        'telegram_sent',
+        'telegram_delivered',
+        'report_sent',
+        'message_delivered',
+      ].find((field) => typeof result[field] === 'boolean');
+      const deliveryStatus = String(result.telegram_delivery_status || result.delivery_status || '').toLowerCase();
+      const deliveryConfirmed = deliveryFlag
+        ? result[deliveryFlag]
+        : ['sent', 'delivered', 'success', 'succeeded'].includes(deliveryStatus);
+      const deliveryFailed = deliveryFlag
+        ? !result[deliveryFlag]
+        : ['failed', 'error'].includes(deliveryStatus);
+      const deliveryMessage = deliveryConfirmed
+        ? ' Telegram report delivery was confirmed by the backend.'
+        : deliveryFailed
+          ? ' Telegram report delivery failed; check the bot configuration and group permissions.'
+          : ' The API did not confirm Telegram report delivery.';
+      setNotice(`Session closed.${deliveryMessage}`);
+      await fetchDashboard();
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to close session.'));
+    } finally {
+      setClosing(false);
     }
   };
 
@@ -54,6 +87,7 @@ export default function Dashboard() {
           <button onClick={fetchDashboard} className="mt-2 font-semibold underline">Retry</button>
         </div>
       )}
+      {notice && <div role="status" className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</div>}
 
       {stats && (
       <>
@@ -84,13 +118,15 @@ export default function Dashboard() {
             <div>
               <h4 className="text-xl font-bold text-slate-800">{stats.active_session.title}</h4>
               <p className="text-sm text-gray-500 mt-1">Session Number: <span className="font-mono font-medium text-slate-700">{stats.active_session.order_number}</span></p>
-              <p className="text-sm text-gray-500 mt-0.5">Started At: {new Date(stats.active_session.started_at).toLocaleTimeString()}</p>
+              <p className="text-sm text-gray-500 mt-0.5">Started At: {formatDateTime(stats.active_session.started_at)}</p>
+              <p className="text-sm text-gray-500 mt-0.5">Expires At: {formatDateTime(stats.active_session.expires_at)}</p>
             </div>
             <button
               onClick={() => handleCloseSession(stats.active_session.id)}
-              className="bg-red-600 hover:bg-red-700 text-white font-semibold px-5 py-2.5 rounded-lg shadow transition"
+              disabled={closing}
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold px-5 py-2.5 rounded-lg shadow transition disabled:opacity-50"
             >
-              Close Session & Notify Telegram
+              {closing ? 'Ending Order...' : 'End Order'}
             </button>
           </div>
         ) : (
