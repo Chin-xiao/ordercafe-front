@@ -89,10 +89,15 @@ export default function CartCheckoutModal({
   const canSubmit = cart.length > 0 && orderingOpen && initDataAvailable && !loading;
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex flex-col justify-end max-w-lg mx-auto">
-      <div className="bg-white rounded-t-2xl p-5 max-h-[85vh] flex flex-col shadow-2xl animate-slide-up">
+    <div className="fixed inset-0 z-50 mx-auto flex max-w-3xl flex-col justify-end bg-stone-950/50 sm:justify-center sm:p-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cart-dialog-title"
+        className="flex max-h-[90dvh] flex-col rounded-t-3xl bg-white p-5 shadow-2xl sm:mx-auto sm:w-full sm:max-w-xl sm:rounded-3xl"
+      >
         <div className="flex justify-between items-center pb-3 border-b border-gray-100">
-          <h2 className="text-base font-bold text-gray-800">🛒 Your Order Summary</h2>
+          <h2 id="cart-dialog-title" className="text-base font-bold text-gray-800">🛒 Your Order Summary</h2>
           <button
             onClick={onClose}
             disabled={loading}

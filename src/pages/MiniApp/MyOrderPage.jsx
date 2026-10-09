@@ -88,8 +88,10 @@ export default function MyOrderPage() {
           {/* Order Meta Header */}
           <div className="flex justify-between items-center border-b border-gray-100 pb-3">
             <div>
-              <span className="text-xs text-gray-400 font-semibold uppercase">Order ID</span>
-              <h2 className="font-mono font-bold text-gray-800 text-base">#{order?.id}</h2>
+              <span className="text-xs text-gray-400 font-semibold uppercase">Order number</span>
+              <h2 className="font-mono font-bold text-gray-800 text-base">
+                {order?.order_number || (order?.id ? `#${order.id}` : 'Submitted')}
+              </h2>
             </div>
             <div>{getStatusBadge(order?.status)}</div>
           </div>

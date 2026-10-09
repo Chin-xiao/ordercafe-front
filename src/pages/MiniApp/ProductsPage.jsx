@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import { getApiErrorMessage } from '../../api/errors';
-import { getTelegramWebApp } from '../../utils/telegram';
+import { getTelegramUser, getTelegramWebApp } from '../../utils/telegram';
 import {
   formatDateTime,
   formatRemainingTime,
@@ -15,11 +15,33 @@ import CartCheckoutModal from './CartCheckoutModal';
 const SESSION_REFRESH_MS = 15000;
 const INITIAL_NOW = Date.now();
 
+function ProductImage({ product }) {
+  const [failed, setFailed] = useState(false);
+  if (!product.image_url || failed) {
+    return (
+      <div className="flex aspect-[4/3] w-full items-center justify-center bg-stone-100 text-xs text-stone-400">
+        Image unavailable
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={product.image_url}
+      alt={product.name}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className="aspect-[4/3] w-full bg-stone-100 object-cover"
+    />
+  );
+}
+
 export default function MiniAppProductsPage() {
   const navigate = useNavigate();
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [search, setSearch] = useState('');
   const [cart, setCart] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -28,6 +50,7 @@ export default function MiniAppProductsPage() {
   const [sessionVerified, setSessionVerified] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
   const [now, setNow] = useState(INITIAL_NOW);
+  const [customerName, setCustomerName] = useState('');
 
   const fetchSession = useCallback(async () => {
     setSessionVerified(false);
@@ -74,6 +97,8 @@ export default function MiniAppProductsPage() {
   useEffect(() => {
     getTelegramWebApp();
     const startup = window.setTimeout(() => {
+      const telegramUser = getTelegramUser();
+      setCustomerName([telegramUser?.first_name, telegramUser?.last_name].filter(Boolean).join(' '));
       fetchMenu();
       fetchSession();
     }, 0);
@@ -127,31 +152,48 @@ export default function MiniAppProductsPage() {
   const filteredProducts = selectedCategory === 'all'
     ? products
     : products.filter((product) => String(product.category_id) === String(selectedCategory));
+  const visibleProducts = filteredProducts.filter((product) => {
+    const query = search.trim().toLocaleLowerCase();
+    return !query || `${product.name || ''} ${product.description || ''}`.toLocaleLowerCase().includes(query);
+  });
   const totalCartPrice = cart.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
   const totalCartItems = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   if (loading) {
     return (
       <div className="flex justify-center items-center h-screen bg-gray-50 text-gray-500 text-sm">
-        Loading Cafe Menu...
+        <div className="w-full max-w-lg px-4" aria-label="Loading cafe menu">
+          <div className="mb-4 h-6 w-40 animate-pulse rounded bg-stone-200" />
+          <div className="grid grid-cols-2 gap-3">
+            {[0, 1, 2, 3].map((item) => (
+              <div key={item} className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
+                <div className="aspect-[4/3] animate-pulse bg-stone-200" />
+                <div className="space-y-2 p-3">
+                  <div className="h-4 w-3/4 animate-pulse rounded bg-stone-200" />
+                  <div className="h-3 w-1/3 animate-pulse rounded bg-stone-200" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="pb-28 bg-gray-50 min-h-screen text-gray-800">
-      <header className="bg-emerald-600 text-white p-4 shadow-md sticky top-0 z-20 flex justify-between items-center">
+      <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-emerald-800/10 bg-emerald-700 px-4 py-3 text-white shadow-sm">
         <div>
-          <h1 className="text-lg font-bold">☕ {session?.title || 'Cafe Menu'}</h1>
-          <p className="text-xs text-emerald-100">
-            {session?.expires_at ? `Ordering closes ${formatDateTime(session.expires_at)}` : 'Cafe ordering'}
+          <h1 className="text-base font-bold leading-tight">{session?.title || 'Cafe Menu'}</h1>
+          <p className="mt-0.5 text-xs text-emerald-100">
+            {customerName ? `Welcome, ${customerName}` : 'Fresh from the cafe'}
           </p>
         </div>
-        <div className="bg-emerald-700 px-3 py-1 rounded-full text-xs font-semibold">
+        <div className="max-w-[45%] rounded-full bg-emerald-800 px-3 py-1.5 text-right text-[11px] font-semibold leading-tight">
           {orderingOpen
-            ? 'Ordering Open'
+            ? `Open · Closes ${new Date(session.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
             : session
-              ? status
+              ? status.toLowerCase() === 'expired' ? 'Expired' : 'Ordering closed'
               : sessionVerified
                 ? 'No Session'
                 : 'Checking...'}
@@ -170,8 +212,8 @@ export default function MiniAppProductsPage() {
       >
         {orderingOpen ? (
           <>
-            <p className="font-bold">{session.title}</p>
-            <p>Ordering closes: {formatDateTime(session.expires_at)}</p>
+              <p className="font-bold">{session.title}</p>
+              <p>Ordering closes at {new Date(session.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {formatDateTime(session.expires_at)}</p>
             <p className="font-semibold">
               {nearExpiration ? 'Hurry, ordering closes soon: ' : 'Time remaining: '}
               {formatRemainingTime(session.expires_at, now)}
@@ -229,67 +271,89 @@ export default function MiniAppProductsPage() {
         ))}
       </nav>
 
+      <div className="mx-auto max-w-3xl px-4 pb-2 pt-4">
+        <label htmlFor="menu-search" className="sr-only">Search the menu</label>
+        <input
+          id="menu-search"
+          type="search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search drinks and treats"
+          className="w-full rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-800 shadow-sm outline-none placeholder:text-stone-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+        />
+      </div>
+
       {!error && (
-        <div className="p-4 grid grid-cols-2 gap-3 max-w-lg mx-auto">
-          {filteredProducts.map((product) => {
+        <div className="mx-auto grid max-w-3xl grid-cols-2 gap-3 p-4 sm:grid-cols-3 sm:gap-4">
+          {visibleProducts.map((product) => {
             const cartItem = cart.find((item) => item.id === product.id);
+            const unavailable = product.is_available === false;
             return (
-              <article key={product.id} className="bg-white rounded-xl shadow-xs border border-gray-100 overflow-hidden flex flex-col justify-between">
+              <article key={product.id} className={`flex flex-col justify-between overflow-hidden rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md ${unavailable ? 'border-stone-200 opacity-75' : 'border-stone-100'}`}>
                 <div>
-                  {product.image_url ? (
-                    <img src={product.image_url} alt={product.name} className="w-full h-28 object-cover" />
-                  ) : (
-                    <div className="w-full h-28 bg-gray-100 flex items-center justify-center text-gray-400 text-xs">No image</div>
-                  )}
-                  <div className="p-3">
-                    <h2 className="font-bold text-sm text-gray-800">{product.name}</h2>
-                    {product.description && <p className="text-xs text-gray-500 mt-1">{product.description}</p>}
-                    <p className="text-xs text-emerald-600 font-semibold mt-1">${Number(product.price).toFixed(2)}</p>
+                  <div className="relative">
+                    <ProductImage product={product} />
+                    {unavailable && (
+                      <span className="absolute left-2 top-2 rounded-full bg-stone-900/80 px-2.5 py-1 text-[10px] font-semibold text-white">
+                        Unavailable
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-3 sm:p-4">
+                    <h2 className="line-clamp-2 min-h-10 text-sm font-bold text-stone-900">{product.name}</h2>
+                    {product.description && <p className="mt-1 line-clamp-2 min-h-8 text-xs leading-relaxed text-stone-500">{product.description}</p>}
+                    <p className="mt-2 text-sm font-bold text-emerald-700">${Number(product.price).toFixed(2)}</p>
+                    <p className={`mt-1 text-[11px] font-medium ${unavailable ? 'text-red-700' : 'text-stone-500'}`}>
+                      {unavailable ? 'Currently unavailable' : product.is_available === true ? 'Available' : 'Availability not provided'}
+                    </p>
                   </div>
                 </div>
                 <div className="p-3 pt-0">
                   {cartItem ? (
-                    <div className="flex items-center justify-between bg-emerald-50 rounded-lg p-1 border border-emerald-200">
+                    <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 p-1">
                       <button
                         aria-label={`Remove one ${product.name}`}
                         onClick={() => handleUpdateQuantity(product.id, -1)}
-                        className="w-7 h-7 bg-white text-emerald-700 font-bold rounded-md shadow-xs"
+                        className="h-9 w-9 rounded-lg bg-white font-bold text-emerald-700 shadow-sm"
                       >−</button>
-                      <span className="text-xs font-bold text-emerald-800">{cartItem.quantity}</span>
+                      <span className="text-sm font-bold text-emerald-800" aria-live="polite">{cartItem.quantity}</span>
                       <button
                         aria-label={`Add one ${product.name}`}
                         onClick={() => handleUpdateQuantity(product.id, 1)}
-                        className="w-7 h-7 bg-emerald-600 text-white font-bold rounded-md shadow-xs"
+                        disabled={unavailable}
+                        className="h-9 w-9 rounded-lg bg-emerald-700 font-bold text-white shadow-sm disabled:opacity-50"
                       >+</button>
                     </div>
                   ) : (
                     <button
                       onClick={() => handleAddToCart(product)}
-                      disabled={!orderingOpen}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 rounded-lg shadow transition disabled:opacity-40"
+                      disabled={!orderingOpen || unavailable}
+                      className="w-full rounded-xl bg-emerald-700 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-stone-300"
                     >
-                      + Add to Cart
+                      {unavailable ? 'Unavailable' : '+ Add to Cart'}
                     </button>
                   )}
                 </div>
               </article>
             );
           })}
-          {filteredProducts.length === 0 && !error && (
-            <p className="col-span-2 py-8 text-center text-sm text-gray-500">No products are available in this category.</p>
+          {visibleProducts.length === 0 && !error && (
+            <p className="col-span-full py-8 text-center text-sm text-stone-500">
+              {search ? 'No menu items match your search.' : 'No products are available in this category.'}
+            </p>
           )}
         </div>
       )}
 
       {totalCartItems > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg z-30 max-w-lg mx-auto flex items-center justify-between gap-3">
+        <div className="fixed bottom-0 left-0 right-0 z-30 mx-auto flex max-w-3xl items-center justify-between gap-3 border-t border-stone-200 bg-white/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(28,25,23,0.08)] backdrop-blur">
           <div>
-            <p className="text-xs text-gray-500">{totalCartItems} items selected</p>
-            <p className="text-base font-bold text-gray-800">${totalCartPrice.toFixed(2)}</p>
+            <p className="text-xs text-stone-500">{totalCartItems} items selected</p>
+            <p className="text-base font-bold text-stone-900">${totalCartPrice.toFixed(2)}</p>
           </div>
           <button
             onClick={() => setShowCheckout(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-xl text-sm shadow transition"
+            className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-800"
           >
             View Cart & Checkout
           </button>

@@ -39,7 +39,7 @@ export default function OrderSessionsPage() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [feedback, setFeedback] = useState(null);
   const [formError, setFormError] = useState('');
   const [actionId, setActionId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -48,7 +48,6 @@ export default function OrderSessionsPage() {
   const [now, setNow] = useState(INITIAL_NOW);
   const [title, setTitle] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
-  const [announcementMessage, setAnnouncementMessage] = useState('');
 
   const fetchSessions = async () => {
     try {
@@ -95,20 +94,16 @@ export default function OrderSessionsPage() {
     setSubmitting(true);
     setFormError('');
     setError('');
-    setNotice('');
+    setFeedback(null);
     try {
       await api.post('/admin/order-sessions', {
         title: title.trim(),
         expires_at: expirationDate.toISOString(),
-        ...(announcementMessage.trim()
-          ? { announcement_message: announcementMessage.trim() }
-          : {}),
       });
       setTitle('');
       setExpiresAt('');
-      setAnnouncementMessage('');
       setShowModal(false);
-      setNotice('Order session created as a draft.');
+      setFeedback({ type: 'success', sessionMessage: 'Order session created as a draft.' });
       await fetchSessions();
     } catch (err) {
       setFormError(getApiErrorMessage(err, 'Failed to create the order session.'));
@@ -121,23 +116,32 @@ export default function OrderSessionsPage() {
     if (actionId !== null) return;
     setActionId(id);
     setError('');
-    setNotice('');
+    setFeedback(null);
     try {
       const response = await api.post(`/admin/order-sessions/${id}/start`);
       const result = unwrapApiData(response) || {};
-      if (result.success === false) {
-        throw new Error(result.message || 'The backend did not confirm that the session started.');
-      }
-
+      const refreshedSessions = await fetchSessions();
+      const refreshedSession = refreshedSessions.find((session) => String(session.id) === String(id));
+      const sessionStarted = result.success !== false && (
+        result.success === true
+        || String(result.status || '').toUpperCase() === 'OPEN'
+        || String(refreshedSession?.status || '').toUpperCase() === 'OPEN'
+      );
       const delivery = getTelegramDelivery(result);
-      const responseMessage = typeof result.message === 'string' ? ` ${result.message}` : '';
-      const deliveryMessage = delivery === 'confirmed'
-        ? ' Telegram announcement delivery was confirmed by the backend.'
-        : delivery === 'failed'
-          ? ' The session started, but Telegram announcement delivery failed; check the bot configuration and group permissions.'
-          : ' The session start was accepted, but the API did not confirm Telegram message delivery.';
-      setNotice(`Session start accepted.${deliveryMessage}${responseMessage}`);
-      await fetchSessions();
+      setFeedback({
+        type: sessionStarted ? 'success' : 'warning',
+        sessionMessage: sessionStarted
+          ? (typeof result.message === 'string' ? result.message : 'Order session started successfully.')
+          : (typeof result.message === 'string'
+            ? result.message
+            : 'The start request was accepted, but the refreshed status does not confirm that the session is open.'),
+        deliveryMessage: delivery === 'confirmed'
+          ? 'Telegram group announcement sent successfully.'
+          : delivery === 'failed'
+            ? 'Telegram group announcement delivery failed. Check the bot and group permissions; retry only if the backend supports it.'
+            : 'Telegram group announcement delivery was not confirmed by the backend.',
+        deliveryType: delivery,
+      });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to start the order session.'));
     } finally {
@@ -154,7 +158,7 @@ export default function OrderSessionsPage() {
 
     setActionId(session.id);
     setError('');
-    setNotice('');
+    setFeedback(null);
     setFinalReport('');
     try {
       const response = await api.post(`/admin/order-sessions/${session.id}/close`);
@@ -164,16 +168,26 @@ export default function OrderSessionsPage() {
       }
 
       const refreshedSessions = await fetchSessions();
-      const refreshedSession = refreshedSessions.find((item) => item.id === session.id);
+      const refreshedSession = refreshedSessions.find((item) => String(item.id) === String(session.id));
       setFinalReport(getFinalReport(result) || getFinalReport(refreshedSession));
+      const sessionClosed = result.success !== false && (
+        result.success === true
+        || String(result.status || '').toUpperCase() === 'CLOSED'
+        || String(refreshedSession?.status || '').toUpperCase() === 'CLOSED'
+      );
       const delivery = getTelegramDelivery(result);
-      const reportMessage = delivery === 'confirmed'
-        ? ' Telegram report delivery was confirmed by the backend.'
-        : delivery === 'failed'
-          ? ' The session closed, but Telegram report delivery failed; check the bot configuration and group permissions.'
-          : ' The session closed, but the API did not confirm Telegram report delivery.';
-      const responseMessage = typeof result.message === 'string' ? ` ${result.message}` : '';
-      setNotice(`Session closed.${reportMessage}${responseMessage}`);
+      setFeedback({
+        type: sessionClosed ? 'success' : 'warning',
+        sessionMessage: sessionClosed
+          ? (typeof result.message === 'string' ? result.message : 'Order session closed successfully.')
+          : 'The close request was accepted, but the refreshed status does not confirm that the session is closed.',
+        deliveryMessage: delivery === 'confirmed'
+          ? 'Telegram report delivery was confirmed by the backend.'
+          : delivery === 'failed'
+            ? 'Telegram report delivery failed. Check the bot and group permissions.'
+            : 'Telegram report delivery was not confirmed by the backend.',
+        deliveryType: delivery,
+      });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to close the order session.'));
     } finally {
@@ -198,8 +212,12 @@ export default function OrderSessionsPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">
-      <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Order Sessions Management</h1>
+      <div className="flex flex-wrap justify-between items-end gap-3 mb-6">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Cafe operations</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mt-1">Order sessions</h1>
+          <p className="text-sm text-gray-500 mt-1">Create ordering windows and manage their status.</p>
+        </div>
         <button
           onClick={() => { setFormError(''); setShowModal(true); }}
           className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-lg text-sm shadow transition"
@@ -214,9 +232,18 @@ export default function OrderSessionsPage() {
           <button onClick={fetchSessions} className="mt-2 font-semibold underline">Retry</button>
         </div>
       )}
-      {notice && (
-        <div role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          {notice}
+      {feedback && (
+        <div role="status" className={`mb-4 rounded-lg border p-4 text-sm ${
+          feedback.type === 'success'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+            : 'border-amber-200 bg-amber-50 text-amber-900'
+        }`}>
+          <p className="font-semibold">{feedback.sessionMessage}</p>
+          {feedback.deliveryMessage && (
+            <p className={`mt-1 ${feedback.deliveryType === 'failed' ? 'font-semibold' : ''}`}>
+              {feedback.deliveryMessage}
+            </p>
+          )}
         </div>
       )}
       {finalReport && (
@@ -256,17 +283,6 @@ export default function OrderSessionsPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
                 />
               </div>
-              <div className="mb-6">
-                <label htmlFor="session-announcement" className="block text-xs font-semibold text-gray-500 mb-1">Announcement Message (optional)</label>
-                <textarea
-                  id="session-announcement"
-                  value={announcementMessage}
-                  onChange={(event) => setAnnouncementMessage(event.target.value)}
-                  rows="3"
-                  placeholder="Add a note for customers in the Telegram group"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                />
-              </div>
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
@@ -288,6 +304,20 @@ export default function OrderSessionsPage() {
           </div>
         </div>
       )}
+
+      <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5" aria-label="Session overview">
+        {[
+          ['Loaded sessions', sessions.length],
+          ['Draft', sessions.filter((session) => getSessionStatus(session, now) === 'DRAFT').length],
+          ['Open', sessions.filter((session) => getSessionStatus(session, now) === 'OPEN').length],
+          ['Closed / expired', sessions.filter((session) => ['CLOSED', 'EXPIRED'].includes(getSessionStatus(session, now))).length],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium text-gray-500">{label}</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900">{value}</p>
+          </div>
+        ))}
+      </section>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
         {loading ? (
@@ -313,7 +343,7 @@ export default function OrderSessionsPage() {
                     <td className="p-4">{getStatusBadge(status)}</td>
                     <td className="p-4 text-gray-600">
                       <div>Started: {formatDateTime(session.started_at)}</div>
-                      <div>Expires: {formatDateTime(session.expires_at)}</div>
+                      <div>Expires: <span className="font-medium text-gray-800">{formatDateTime(session.expires_at)}</span></div>
                       {status === 'OPEN' && (
                         <div className="font-semibold text-emerald-700">
                           Remaining: {formatRemainingTime(session.expires_at, now)}
