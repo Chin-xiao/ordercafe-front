@@ -1,17 +1,26 @@
 // src/pages/Admin/Dashboard.jsx
 import React, { useEffect, useState } from 'react';
-import api from '../../api/axios'; // Axios client with Sanctum auth interceptors
+import api from '../../api/axios'; // Axios client with bearer auth
+import { getApiErrorMessage } from '../../api/errors';
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const fetchDashboard = async () => {
     try {
+      setLoading(true);
+      setError('');
       const res = await api.get('/admin/dashboard');
+      if (!res.data || typeof res.data !== 'object' || Array.isArray(res.data)) {
+        throw new Error('The API returned an invalid dashboard response.');
+      }
       setStats(res.data);
     } catch (err) {
       console.error('Failed to load dashboard data', err);
+      setStats(null);
+      setError(getApiErrorMessage(err, 'Failed to load dashboard data.'));
     } finally {
       setLoading(false);
     }
@@ -29,7 +38,7 @@ export default function Dashboard() {
       alert('Order session closed and Telegram summary dispatched successfully!');
       fetchDashboard();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to close session.');
+      setError(getApiErrorMessage(err, 'Failed to close session.'));
     }
   };
 
@@ -39,6 +48,15 @@ export default function Dashboard() {
     <div>
       <h1 className="text-2xl font-bold text-gray-800 mb-6">Overview Dashboard</h1>
 
+      {error && (
+        <div role="alert" className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <p>{error}</p>
+          <button onClick={fetchDashboard} className="mt-2 font-semibold underline">Retry</button>
+        </div>
+      )}
+
+      {stats && (
+      <>
       {/* Metric Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
@@ -84,6 +102,8 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

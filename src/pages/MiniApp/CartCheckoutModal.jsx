@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import api from '../../api/axios';
-import { getTelegramUser } from '../../utils/telegram';
+import { getApiErrorMessage } from '../../api/errors';
+import { getInitData } from '../../utils/telegram';
 
 export default function CartCheckoutModal({ isOpen, onClose, cart, setCart, onOrderSuccess }) {
   const [note, setNote] = useState('');
@@ -29,12 +30,11 @@ export default function CartCheckoutModal({ isOpen, onClose, cart, setCart, onOr
     try {
       setLoading(true);
       setError('');
-      const user = getTelegramUser();
+      if (!getInitData()) {
+        throw new Error('Open this menu in Telegram to submit an order.');
+      }
 
-      // Format payload to match your Laravel OrderController expectation
       const payload = {
-        initData: user.initData,
-        telegram_id: user.id,
         note: note,
         items: cart.map((item) => ({
           product_id: item.id,
@@ -42,13 +42,13 @@ export default function CartCheckoutModal({ isOpen, onClose, cart, setCart, onOr
         })),
       };
 
-      const response = await api.post('/api/mini-app/orders', payload);
+      const response = await api.post('/mini-app/orders', payload);
       
       // Clear cart and trigger success state
       setCart([]);
       onOrderSuccess(response.data.data || response.data);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to submit order. Please try again.');
+      setError(getApiErrorMessage(err, 'Failed to submit order. Please try again.'));
     } finally {
       setLoading(false);
     }

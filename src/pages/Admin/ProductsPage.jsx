@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../api/axios';
+import { getApiErrorMessage } from '../../api/errors';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   
   // Modal & Form State
   const [showModal, setShowModal] = useState(false);
@@ -21,12 +23,21 @@ export default function ProductsPage() {
       setLoading(true);
       const [prodRes, catRes] = await Promise.all([
         api.get('/admin/products'),
-        api.get('/admin/categories') // Ensure you have this route, or fetch categories accordingly
+        api.get('/admin/categories')
       ]);
-      setProducts(prodRes.data.data || prodRes.data);
-      setCategories(catRes.data.data || catRes.data);
+      const productList = prodRes.data?.data ?? prodRes.data;
+      const categoryList = catRes.data?.data ?? catRes.data;
+      if (!Array.isArray(productList) || !Array.isArray(categoryList)) {
+        throw new Error('The API returned an invalid products or categories response.');
+      }
+      setProducts(productList);
+      setCategories(categoryList);
+      setLoadError('');
     } catch (err) {
       console.error('Failed to fetch products or categories', err);
+      setProducts([]);
+      setCategories([]);
+      setLoadError(getApiErrorMessage(err, 'Failed to load products and categories.'));
     } finally {
       setLoading(false);
     }
@@ -68,7 +79,7 @@ export default function ProductsPage() {
       setShowModal(false);
       fetchData();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save product.');
+      setError(getApiErrorMessage(err, 'Failed to save product.'));
     } finally {
       setSubmitting(false);
     }
@@ -79,7 +90,7 @@ export default function ProductsPage() {
       await api.patch(`/admin/products/${id}/availability`);
       fetchData();
     } catch (err) {
-      alert('Failed to update product availability.');
+      setLoadError(getApiErrorMessage(err, 'Failed to update product availability.'));
     }
   };
 
@@ -89,7 +100,7 @@ export default function ProductsPage() {
       await api.delete(`/admin/products/${id}`);
       fetchData();
     } catch (err) {
-      alert('Failed to delete product.');
+      setLoadError(getApiErrorMessage(err, 'Failed to delete product.'));
     }
   };
 
@@ -106,6 +117,13 @@ export default function ProductsPage() {
           + Add New Product
         </button>
       </div>
+
+      {loadError && (
+        <div role="alert" className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <p>{loadError}</p>
+          <button onClick={fetchData} className="mt-2 font-semibold underline">Retry</button>
+        </div>
+      )}
 
       {/* Products Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -154,7 +172,7 @@ export default function ProductsPage() {
                 </td>
               </tr>
             ))}
-            {products.length === 0 && (
+            {!loadError && products.length === 0 && (
               <tr>
                 <td colSpan="6" className="p-8 text-center text-gray-500">No products found. Add your first item!</td>
               </tr>

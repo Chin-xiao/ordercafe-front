@@ -1,14 +1,20 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
+import { getApiErrorMessage } from '../../api/errors';
 import { getTelegramUser } from '../../utils/telegram';
+import CartCheckoutModal from './CartCheckoutModal';
 
 export default function MiniAppProductsPage() {
+  const navigate = useNavigate();
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [cart, setCart] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [user, setUser] = useState(null);
+  const [showCheckout, setShowCheckout] = useState(false);
 
   useEffect(() => {
     setUser(getTelegramUser());
@@ -18,14 +24,23 @@ export default function MiniAppProductsPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
+      setError('');
       const [catRes, prodRes] = await Promise.all([
-        api.get('/api/mini-app/categories'),
-        api.get('/api/mini-app/products')
+        api.get('/mini-app/categories'),
+        api.get('/mini-app/products')
       ]);
-      setCategories(catRes.data.data || catRes.data);
-      setProducts(prodRes.data.data || prodRes.data);
+      const categoryList = catRes.data?.data ?? catRes.data;
+      const productList = prodRes.data?.data ?? prodRes.data;
+      if (!Array.isArray(categoryList) || !Array.isArray(productList)) {
+        throw new Error('The API returned an invalid menu response.');
+      }
+      setCategories(categoryList);
+      setProducts(productList);
     } catch (err) {
       console.error('Failed to load menu items', err);
+      setCategories([]);
+      setProducts([]);
+      setError(getApiErrorMessage(err, 'Failed to load menu items.'));
     } finally {
       setLoading(false);
     }
@@ -85,6 +100,13 @@ export default function MiniAppProductsPage() {
         </div>
       </div>
 
+      {error && (
+        <div role="alert" className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <p>{error}</p>
+          <button onClick={fetchData} className="mt-2 font-semibold underline">Retry</button>
+        </div>
+      )}
+
       {/* Category Horizontal Bar */}
       <div className="flex overflow-x-auto px-4 py-3 bg-white shadow-xs gap-2 no-scrollbar sticky top-14 z-10">
         <button
@@ -113,7 +135,7 @@ export default function MiniAppProductsPage() {
       </div>
 
       {/* Product Grid */}
-      <div className="p-4 grid grid-cols-2 gap-3 max-w-lg mx-auto">
+      {!error && <div className="p-4 grid grid-cols-2 gap-3 max-w-lg mx-auto">
         {filteredProducts.map((product) => {
           const cartItem = cart.find((item) => item.id === product.id);
           return (
@@ -157,7 +179,7 @@ export default function MiniAppProductsPage() {
             </div>
           );
         })}
-      </div>
+      </div>}
 
       {/* Floating Bottom Cart Bar */}
       {totalCartItems > 0 && (
@@ -167,13 +189,21 @@ export default function MiniAppProductsPage() {
             <p className="text-base font-bold text-gray-800">${totalCartPrice.toFixed(2)}</p>
           </div>
           <button 
-            onClick={() => alert('Proceeding to Checkout! (Step 2)')}
+            onClick={() => setShowCheckout(true)}
             className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-xl text-sm shadow transition"
           >
             View Cart & Checkout ➔
           </button>
         </div>
       )}
+
+      <CartCheckoutModal
+        isOpen={showCheckout}
+        onClose={() => setShowCheckout(false)}
+        cart={cart}
+        setCart={setCart}
+        onOrderSuccess={() => navigate('/my-order')}
+      />
     </div>
   );
 }

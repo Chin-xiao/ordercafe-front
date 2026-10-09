@@ -1,15 +1,20 @@
 // src/layouts/AdminLayout.jsx
 import React from 'react';
-import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { Link, Navigate, Outlet, useNavigate } from 'react-router-dom';
 
 export default function AdminLayout() {
   const navigate = useNavigate();
+  const hasToken = Boolean(localStorage.getItem('admin_token') || localStorage.getItem('token'));
 
   const handleLogout = () => {
     localStorage.removeItem('admin_token');
     localStorage.removeItem('token');
     navigate('/');
   };
+
+  if (!hasToken) {
+    return <Navigate to="/admin/login" replace />;
+  }
 
   return (
     <div className="flex h-screen bg-gray-100 font-sans">

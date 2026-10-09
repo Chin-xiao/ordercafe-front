@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../api/axios';
-import { getTelegramUser } from '../../utils/telegram';
+import { getApiErrorMessage } from '../../api/errors';
 
 export default function MyOrderPage() {
   const [order, setOrder] = useState(null);
@@ -10,18 +10,13 @@ export default function MyOrderPage() {
   const fetchMyOrder = async () => {
     try {
       setLoading(true);
-      const user = getTelegramUser();
       
       // Fetch the current user's active order for the active session
-      const response = await api.get('/api/mini-app/my-order', {
-        headers: {
-          'X-Telegram-Init-Data': user.initData,
-        },
-      });
+      const response = await api.get('/mini-app/my-order');
       
       setOrder(response.data.data || response.data);
     } catch (err) {
-      setError(err.response?.data?.message || 'No active order found for this session.');
+      setError(getApiErrorMessage(err, 'No active order found for this session.'));
     } finally {
       setLoading(false);
     }
@@ -69,7 +64,7 @@ export default function MyOrderPage() {
           <h3 className="font-bold text-gray-800 text-base">No Active Order</h3>
           <p className="text-xs text-gray-500">{error}</p>
           <button
-            onClick={() => window.location.href = '/mini-app'}
+            onClick={() => window.location.href = '/menu'}
             className="mt-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow transition"
           >
             Browse Menu & Order

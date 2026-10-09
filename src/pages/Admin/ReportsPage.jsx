@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../api/axios';
+import { getApiErrorMessage } from '../../api/errors';
 
 export default function ReportsPage() {
   const [salesData, setSalesData] = useState(null);
@@ -7,10 +8,12 @@ export default function ReportsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const fetchReports = async () => {
     try {
       setLoading(true);
+      setError('');
       const params = {};
       if (dateFrom) params.date_from = dateFrom;
       if (dateTo) params.date_to = dateTo;
@@ -20,10 +23,17 @@ export default function ReportsPage() {
         api.get('/admin/reports/products', { params })
       ]);
 
+      const products = productsRes.data?.data ?? productsRes.data;
+      if (!salesRes.data || typeof salesRes.data !== 'object' || !Array.isArray(products)) {
+        throw new Error('The API returned an invalid reports response.');
+      }
       setSalesData(salesRes.data);
-      setTopProducts(productsRes.data.data);
+      setTopProducts(products);
     } catch (err) {
       console.error('Failed to load report analytics', err);
+      setSalesData(null);
+      setTopProducts([]);
+      setError(getApiErrorMessage(err, 'Failed to load report analytics.'));
     } finally {
       setLoading(false);
     }
@@ -76,11 +86,20 @@ export default function ReportsPage() {
         <p className="text-gray-500">Compiling report metrics...</p>
       ) : (
         <>
+          {error && (
+            <div role="alert" className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              <p>{error}</p>
+              <button onClick={fetchReports} className="mt-2 font-semibold underline">Retry</button>
+            </div>
+          )}
+
+          {!error && (
+          <>
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
               <p className="text-sm font-medium text-gray-500">Total Revenue</p>
-              <p className="text-3xl font-bold text-emerald-600 mt-2">${salesData?.total_revenue?.toFixed(2) || '0.00'}</p>
+              <p className="text-3xl font-bold text-emerald-600 mt-2">${Number(salesData?.total_revenue || 0).toFixed(2)}</p>
             </div>
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
               <p className="text-sm font-medium text-gray-500">Total Orders Placed</p>
@@ -119,6 +138,8 @@ export default function ReportsPage() {
               </tbody>
             </table>
           </div>
+          </>
+          )}
         </>
       )}
     </div>

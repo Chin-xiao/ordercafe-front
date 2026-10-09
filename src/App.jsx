@@ -9,6 +9,8 @@ import TelegramSettingsPage from './pages/Admin/TelegramSettingsPage';
 import CartPage from './pages/CartPage';
 import LoginPage from './pages/Admin/LoginPage';
 import RegisterPage from './pages/Admin/RegisterPage';
+import MyOrderPage from './pages/MiniApp/MyOrderPage';
+import MiniAppProductsPage from './pages/MiniApp/ProductsPage';
 
 // Helper to check if the app is running inside Telegram
 const isTelegramMiniApp = () => {
@@ -18,7 +20,7 @@ const isTelegramMiniApp = () => {
 // Smart Root Component: Telegram users see the shop; regular browsers go to Login
 const SmartRoot = () => {
   if (isTelegramMiniApp()) {
-    return <CartPage />;
+    return <MiniAppProductsPage />;
   }
   return <Navigate to="/admin/login" replace />;
 };
@@ -46,7 +48,9 @@ function App() {
         </Route>
 
         {/* Explicit Customer Menu Fallback Route */}
-        <Route path="/menu" element={<CartPage />} />
+        <Route path="/menu" element={<MiniAppProductsPage />} />
+        <Route path="/cart" element={<CartPage />} />
+        <Route path="/my-order" element={<MyOrderPage />} />
 
         {/* Catch-all redirect */}
         <Route path="*" element={<Navigate to="/" replace />} />

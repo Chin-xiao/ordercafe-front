@@ -72,6 +72,7 @@ export const useCartStore = create(
           set({ activeSession: response.data.data || response.data });
         } catch (err) {
           console.error('Failed to fetch active order session', err);
+          set({ error: err.response?.data?.message || err.message });
         }
       },
 
@@ -96,7 +97,7 @@ export const useCartStore = create(
           set({ items: [], loading: false }); // Clear cart on success
           return response.data.data;
         } catch (err) {
-          const errorMessage = err.response?.data?.message || err.response?.data?.errors?.items?.[0] || 'Failed to submit order.';
+          const errorMessage = err.response?.data?.message || err.response?.data?.errors?.items?.[0] || err.message || 'Failed to submit order.';
           set({ error: errorMessage, loading: false });
           throw new Error(errorMessage);
         }

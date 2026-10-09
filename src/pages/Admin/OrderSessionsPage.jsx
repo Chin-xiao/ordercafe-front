@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../api/axios';
+import { getApiErrorMessage } from '../../api/errors';
 
 export default function OrderSessionsPage() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   
   // New session form state
@@ -13,10 +16,17 @@ export default function OrderSessionsPage() {
   const fetchSessions = async () => {
     try {
       setLoading(true);
+      setError('');
       const res = await api.get('/admin/order-sessions');
-      setSessions(res.data.data || res.data);
+      const sessionList = res.data?.data ?? res.data;
+      if (!Array.isArray(sessionList)) {
+        throw new Error('The API returned an invalid order sessions response.');
+      }
+      setSessions(sessionList);
     } catch (err) {
       console.error('Failed to load order sessions', err);
+      setSessions([]);
+      setError(getApiErrorMessage(err, 'Failed to load order sessions.'));
     } finally {
       setLoading(false);
     }
@@ -28,6 +38,8 @@ export default function OrderSessionsPage() {
 
   const handleCreateSession = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
+    setError('');
     try {
       await api.post('/admin/order-sessions', {
         title,
@@ -36,9 +48,11 @@ export default function OrderSessionsPage() {
       setTitle('');
       setExpiresAt('');
       setShowModal(false);
-      fetchSessions();
+      await fetchSessions();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to create session.');
+      setError(getApiErrorMessage(err, 'Failed to create session.'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -48,7 +62,7 @@ export default function OrderSessionsPage() {
       alert('Order session started! Telegram bot has announced it to the group.');
       fetchSessions();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to start session.');
+      setError(getApiErrorMessage(err, 'Failed to start session.'));
     }
   };
 
@@ -59,7 +73,7 @@ export default function OrderSessionsPage() {
       alert('Session closed and Telegram summary dispatched successfully!');
       fetchSessions();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to close session.');
+      setError(getApiErrorMessage(err, 'Failed to close session.'));
     }
   };
 
@@ -85,6 +99,13 @@ export default function OrderSessionsPage() {
           + Create New Session
         </button>
       </div>
+
+      {error && (
+        <div role="alert" className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <p>{error}</p>
+          <button onClick={fetchSessions} className="mt-2 font-semibold underline">Retry</button>
+        </div>
+      )}
 
       {/* Create Session Modal */}
       {showModal && (
@@ -123,9 +144,10 @@ export default function OrderSessionsPage() {
                 </button>
                 <button
                   type="submit"
+                  disabled={submitting}
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow"
                 >
-                  Save Session
+                  {submitting ? 'Saving...' : 'Save Session'}
                 </button>
               </div>
             </form>
@@ -178,7 +200,7 @@ export default function OrderSessionsPage() {
                   </td>
                 </tr>
               ))}
-              {sessions.length === 0 && (
+              {!error && sessions.length === 0 && (
                 <tr>
                   <td colSpan="5" className="p-8 text-center text-gray-500">No order sessions created yet.</td>
                 </tr>

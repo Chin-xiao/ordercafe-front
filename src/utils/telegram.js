@@ -17,14 +17,7 @@ export const getTelegramWebApp = () => {
  */
 export const getInitData = () => {
   const webApp = getTelegramWebApp();
-  
-  // Return actual Telegram initData if running inside the Telegram app
-  if (webApp && webApp.initData) {
-    return webApp.initData;
-  }
-
-  // Fallback for local browser development testing outside Telegram
-  return 'query_id=AAH...&user=%7B%22id%22%3A123456789%2C%22first_name%22%3A%22Sokheng%22%7D&auth_date=1727760000&hash=abc...';
+  return webApp?.initData || '';
 };
 
 /**
@@ -43,14 +36,7 @@ export const getTelegramUser = () => {
     };
   }
 
-  // Mock user fallback for local browser testing
-  return {
-    id: 123456789,
-    first_name: 'Sokheng',
-    last_name: 'Dev',
-    username: 'sokheng_dev',
-    initData: getInitData(),
-  };
+  return null;
 };
 
 /**

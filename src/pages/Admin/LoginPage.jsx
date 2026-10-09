@@ -1,10 +1,17 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../../api/axios';
+import { getApiErrorMessage } from '../../api/errors';
 
 export default function LoginPage() {
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(() => (
+    searchParams.get('reason') === 'session-expired'
+      ? 'Your session has expired. Please sign in again.'
+      : ''
+  ));
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -14,10 +21,14 @@ export default function LoginPage() {
 
     try {
       const response = await api.post('/admin/login', { email, password });
-      localStorage.setItem('token', response.data.token);
+      if (typeof response.data?.token !== 'string' || !response.data.token) {
+        throw new Error('The server did not return an authentication token.');
+      }
+      localStorage.setItem('admin_token', response.data.token);
+      localStorage.removeItem('token');
       window.location.href = '/admin/dashboard';
     } catch (err) {
-      setError(err.response?.data?.message || 'Invalid login credentials.');
+      setError(getApiErrorMessage(err, 'Invalid login credentials.'));
     } finally {
       setLoading(false);
     }

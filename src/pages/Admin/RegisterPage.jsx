@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import api from '../../api/axios';
+import { getApiErrorMessage } from '../../api/errors';
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -22,10 +23,14 @@ export default function RegisterPage() {
 
     try {
       const response = await api.post('/admin/register', formData);
-      localStorage.setItem('token', response.data.token);
+      if (typeof response.data?.token !== 'string' || !response.data.token) {
+        throw new Error('The server did not return an authentication token.');
+      }
+      localStorage.setItem('admin_token', response.data.token);
+      localStorage.removeItem('token');
       window.location.href = '/admin/dashboard';
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed. Please check your inputs.');
+      setError(getApiErrorMessage(err, 'Registration failed. Please check your inputs.'));
     } finally {
       setLoading(false);
     }
