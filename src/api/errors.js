@@ -20,6 +20,10 @@ export const getApiErrorMessage = (error, fallback) => {
     if (response.status === 422) {
       return validationMessage || message || 'The server rejected the submitted data (422). Check the required fields.';
     }
+    if (response.status === 502) {
+      const detail = message || 'The Laravel API returned HTTP 502 Bad Gateway.';
+      return `${detail} The session start may have reached the backend, but success is not confirmed. Refresh the session status and check the backend logs before retrying.`;
+    }
     if (response.status >= 500) {
       return message || `The Laravel API encountered a server error (HTTP ${response.status}). Please try again later.`;
     }

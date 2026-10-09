@@ -8,30 +8,28 @@ import {
   unwrapApiData,
 } from '../../utils/orderSession';
 
-const getTelegramDelivery = (data) => {
-  const flags = [
-    'telegram_message_sent',
-    'telegram_sent',
-    'telegram_delivered',
-    'telegram_report_sent',
-    'announcement_sent',
-    'report_sent',
-    'message_delivered',
-  ];
-  const confirmedFlag = flags.find((field) => typeof data?.[field] === 'boolean');
-  if (confirmedFlag) return data[confirmedFlag] ? 'confirmed' : 'failed';
-
-  const status = String(data?.telegram_delivery_status || data?.delivery_status || '').toLowerCase();
-  if (['sent', 'delivered', 'success', 'succeeded'].includes(status)) return 'confirmed';
-  if (['failed', 'error'].includes(status)) return 'failed';
-  return 'unknown';
-};
-
 const getFinalReport = (data) => {
   const report = data?.final_report ?? data?.report ?? data?.summary;
   if (typeof report === 'string') return report;
   return report && typeof report === 'object' ? JSON.stringify(report, null, 2) : '';
 };
+
+const getSessionMetrics = (session) => Object.entries(session)
+  .filter(([key, value]) => (
+    /(?:order|customer).*count|count.*(?:order|customer)/i.test(key)
+    && typeof value === 'number'
+  ));
+
+const getSessionDeliveryFields = (session) => Object.entries(session)
+  .filter(([key, value]) => (
+    /telegram/i.test(key)
+    && /(announcement|delivery|sent|delivered)/i.test(key)
+    && (typeof value === 'string' || typeof value === 'boolean')
+  ));
+
+const formatBackendResponse = (data) => JSON.stringify(data, (key, value) => (
+  /token|secret|password/i.test(key) ? '[redacted]' : value
+), 2);
 
 const INITIAL_NOW = Date.now();
 
@@ -64,7 +62,7 @@ export default function OrderSessionsPage() {
       console.error('Failed to load order sessions', err);
       setSessions([]);
       setError(getApiErrorMessage(err, 'Failed to load order sessions.'));
-      return [];
+      return null;
     } finally {
       setLoading(false);
     }
@@ -119,15 +117,17 @@ export default function OrderSessionsPage() {
     setFeedback(null);
     try {
       const response = await api.post(`/admin/order-sessions/${id}/start`);
-      const result = unwrapApiData(response) || {};
+      const responseData = unwrapApiData(response);
+      const result = responseData && typeof responseData === 'object' ? responseData : {};
       const refreshedSessions = await fetchSessions();
-      const refreshedSession = refreshedSessions.find((session) => String(session.id) === String(id));
-      const sessionStarted = result.success !== false && (
-        result.success === true
-        || String(result.status || '').toUpperCase() === 'OPEN'
-        || String(refreshedSession?.status || '').toUpperCase() === 'OPEN'
-      );
-      const delivery = getTelegramDelivery(result);
+      const refreshedSession = refreshedSessions?.find((session) => String(session.id) === String(id));
+      const sessionStarted = result.success !== false
+        && String(refreshedSession?.status || '').toUpperCase() === 'OPEN';
+      const responseDetails = responseData === null
+        ? ''
+        : typeof responseData === 'string'
+          ? responseData
+          : formatBackendResponse(responseData);
       setFeedback({
         type: sessionStarted ? 'success' : 'warning',
         sessionMessage: sessionStarted
@@ -135,15 +135,24 @@ export default function OrderSessionsPage() {
           : (typeof result.message === 'string'
             ? result.message
             : 'The start request was accepted, but the refreshed status does not confirm that the session is open.'),
-        deliveryMessage: delivery === 'confirmed'
-          ? 'Telegram group announcement sent successfully.'
-          : delivery === 'failed'
-            ? 'Telegram group announcement delivery failed. Check the bot and group permissions; retry only if the backend supports it.'
-            : 'Telegram group announcement delivery was not confirmed by the backend.',
-        deliveryType: delivery,
+        deliveryMessage: 'Telegram announcement delivery is not inferred from HTTP success. See the backend response below if it reports delivery.',
+        responseDetails,
       });
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to start the order session.'));
+      const requestMessage = getApiErrorMessage(err, 'Failed to start the order session.');
+      const statusCode = err.response?.status;
+      if (!err.response || statusCode >= 500) {
+        const refreshedSessions = await fetchSessions();
+        const refreshedSession = refreshedSessions?.find((session) => String(session.id) === String(id));
+        const reconciledStatus = refreshedSession
+          ? String(refreshedSession.status || 'unknown').toUpperCase()
+          : 'unavailable';
+        setError(
+          `${requestMessage} The start request was not retried. Refreshed session status: ${reconciledStatus}.`
+        );
+      } else {
+        setError(requestMessage);
+      }
     } finally {
       setActionId(null);
     }
@@ -162,31 +171,26 @@ export default function OrderSessionsPage() {
     setFinalReport('');
     try {
       const response = await api.post(`/admin/order-sessions/${session.id}/close`);
-      const result = unwrapApiData(response) || {};
+      const responseData = unwrapApiData(response);
+      const result = responseData && typeof responseData === 'object' ? responseData : {};
       if (result.success === false) {
         throw new Error(result.message || 'The backend did not confirm that the session closed.');
       }
 
       const refreshedSessions = await fetchSessions();
-      const refreshedSession = refreshedSessions.find((item) => String(item.id) === String(session.id));
+      const refreshedSession = refreshedSessions?.find((item) => String(item.id) === String(session.id));
       setFinalReport(getFinalReport(result) || getFinalReport(refreshedSession));
       const sessionClosed = result.success !== false && (
         result.success === true
         || String(result.status || '').toUpperCase() === 'CLOSED'
         || String(refreshedSession?.status || '').toUpperCase() === 'CLOSED'
       );
-      const delivery = getTelegramDelivery(result);
       setFeedback({
         type: sessionClosed ? 'success' : 'warning',
         sessionMessage: sessionClosed
           ? (typeof result.message === 'string' ? result.message : 'Order session closed successfully.')
           : 'The close request was accepted, but the refreshed status does not confirm that the session is closed.',
-        deliveryMessage: delivery === 'confirmed'
-          ? 'Telegram report delivery was confirmed by the backend.'
-          : delivery === 'failed'
-            ? 'Telegram report delivery failed. Check the bot and group permissions.'
-            : 'Telegram report delivery was not confirmed by the backend.',
-        deliveryType: delivery,
+        deliveryMessage: 'Telegram report delivery is not inferred from HTTP success. Check the backend response for its delivery result.',
       });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to close the order session.'));
@@ -231,6 +235,14 @@ export default function OrderSessionsPage() {
           <p>{error}</p>
           <button onClick={fetchSessions} className="mt-2 font-semibold underline">Retry</button>
         </div>
+      )}
+      {feedback?.responseDetails && (
+        <details className="mb-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
+          <summary className="cursor-pointer font-semibold text-gray-800">Backend response details</summary>
+          <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs text-gray-700">
+            {feedback.responseDetails}
+          </pre>
+        </details>
       )}
       {feedback && (
         <div role="status" className={`mb-4 rounded-lg border p-4 text-sm ${
@@ -344,6 +356,12 @@ export default function OrderSessionsPage() {
                     <td className="p-4 text-gray-600">
                       <div>Started: {formatDateTime(session.started_at)}</div>
                       <div>Expires: <span className="font-medium text-gray-800">{formatDateTime(session.expires_at)}</span></div>
+                      {getSessionMetrics(session).map(([key, value]) => (
+                        <div key={key}>{key.replaceAll('_', ' ')}: <span className="font-medium text-gray-800">{value}</span></div>
+                      ))}
+                      {getSessionDeliveryFields(session).map(([key, value]) => (
+                        <div key={key}>{key.replaceAll('_', ' ')}: <span className="font-medium text-gray-800">{String(value)}</span></div>
+                      ))}
                       {status === 'OPEN' && (
                         <div className="font-semibold text-emerald-700">
                           Remaining: {formatRemainingTime(session.expires_at, now)}
