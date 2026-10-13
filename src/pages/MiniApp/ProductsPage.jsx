@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import { getApiErrorMessage } from '../../api/errors';
-import { getTelegramUser, getTelegramWebApp } from '../../utils/telegram';
+import { getOrderSessionLaunch, getTelegramUser, getTelegramWebApp } from '../../utils/telegram';
 import {
   formatDateTime,
   formatRemainingTime,
@@ -38,6 +38,7 @@ function ProductImage({ product }) {
 
 export default function MiniAppProductsPage() {
   const navigate = useNavigate();
+  const launch = getOrderSessionLaunch();
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -54,10 +55,21 @@ export default function MiniAppProductsPage() {
 
   const fetchSession = useCallback(async () => {
     setSessionVerified(false);
-    setSessionError('');
+    setSessionError(launch.error);
+    if (launch.error) {
+      setSession(null);
+      setSessionVerified(true);
+      return null;
+    }
+
     try {
       const response = await api.get('/mini-app/order-session/current');
       const activeSession = unwrapApiData(response);
+      if (launch.sessionId && String(activeSession?.id) !== String(launch.sessionId)) {
+        throw new Error(activeSession
+          ? 'The server returned a different order session than the one in this Telegram link.'
+          : 'The order session from this Telegram link could not be found.');
+      }
       setSession(activeSession && typeof activeSession === 'object' ? activeSession : null);
       setSessionVerified(true);
       return activeSession;
@@ -67,7 +79,7 @@ export default function MiniAppProductsPage() {
       setSessionError(getApiErrorMessage(err, 'Unable to verify the order session.'));
       return null;
     }
-  }, []);
+  }, [launch.error, launch.sessionId]);
 
   const fetchMenu = useCallback(async () => {
     try {
@@ -366,6 +378,7 @@ export default function MiniAppProductsPage() {
         cart={cart}
         setCart={setCart}
         session={session}
+        requestedSessionId={launch.sessionId}
         orderingOpen={orderingOpen}
         initDataAvailable={initDataAvailable}
         onOrderSuccess={(order) => navigate('/my-order', { state: { order } })}

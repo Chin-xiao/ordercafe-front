@@ -18,6 +18,42 @@ export const getInitData = () => {
   return webApp?.initData || '';
 };
 
+export const getOrderSessionLaunch = () => {
+  const rawStartParam = getTelegramWebApp()?.initDataUnsafe?.start_param;
+  if (rawStartParam === undefined || rawStartParam === null || rawStartParam === '') {
+    return { startParam: '', sessionId: null, error: '' };
+  }
+
+  if (typeof rawStartParam !== 'string' || rawStartParam.length > 128) {
+    return {
+      startParam: '',
+      sessionId: null,
+      error: 'This Telegram launch link contains an invalid order session parameter.',
+    };
+  }
+
+  const startParam = rawStartParam;
+  const match = /^order_([1-9]\d*)$/.exec(startParam);
+  if (!match) {
+    return {
+      startParam,
+      sessionId: null,
+      error: 'This Telegram launch link does not contain a valid order session.',
+    };
+  }
+
+  const sessionId = Number(match[1]);
+  if (!Number.isSafeInteger(sessionId) || sessionId <= 0) {
+    return {
+      startParam,
+      sessionId: null,
+      error: 'This Telegram launch link contains an invalid order session identifier.',
+    };
+  }
+
+  return { startParam, sessionId, error: '' };
+};
+
 export const getTelegramUser = () => {
   const webApp = getTelegramWebApp();
 

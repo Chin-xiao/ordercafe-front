@@ -10,6 +10,7 @@ export default function CartCheckoutModal({
   cart,
   setCart,
   session,
+  requestedSessionId,
   orderingOpen,
   initDataAvailable,
   onOrderSuccess,
@@ -61,6 +62,7 @@ export default function CartCheckoutModal({
       if (
         !currentSession ||
         String(currentSession.id) !== String(session.id) ||
+        (requestedSessionId && String(currentSession.id) !== String(requestedSessionId)) ||
         !isOrderSessionOpen(currentSession)
       ) {
         throw new Error('This order session is no longer open. Refresh the menu before submitting.');

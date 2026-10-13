@@ -8,6 +8,10 @@ export const getSessionStatus = (session, now = Date.now()) => {
     return 'EXPIRED';
   }
 
+  if (status === 'OPEN' && (session?.ordering_allowed === false || session?.can_order === false)) {
+    return 'CLOSED';
+  }
+
   return status || 'UNKNOWN';
 };
 
@@ -15,6 +19,8 @@ export const isOrderSessionOpen = (session, now = Date.now()) => {
   const expiresAt = session?.expires_at ? new Date(session.expires_at).getTime() : NaN;
   return (
     String(session?.status || '').toUpperCase() === 'OPEN' &&
+    session?.ordering_allowed !== false &&
+    session?.can_order !== false &&
     Number.isFinite(expiresAt) &&
     expiresAt > now
   );

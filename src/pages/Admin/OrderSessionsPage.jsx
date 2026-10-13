@@ -22,10 +22,29 @@ const getSessionMetrics = (session) => Object.entries(session)
 
 const getSessionDeliveryFields = (session) => Object.entries(session)
   .filter(([key, value]) => (
-    /telegram/i.test(key)
-    && /(announcement|delivery|sent|delivered)/i.test(key)
+    (/telegram/i.test(key) || /announcement/i.test(key))
+    && /(announcement|delivery|sent|delivered|status)/i.test(key)
     && (typeof value === 'string' || typeof value === 'boolean')
   ));
+
+const getAnnouncementDeliveryFeedback = (responseData) => {
+  if (!responseData || typeof responseData !== 'object') return null;
+
+  const fields = getSessionDeliveryFields(responseData);
+  if (fields.length === 0) return null;
+
+  const fieldDetails = fields.map(([key, value]) => `${key}: ${String(value)}`).join(', ');
+  const deliveryFailed = fields.some(([, value]) => (
+    value === false || (typeof value === 'string' && /fail|error|undelivered/i.test(value))
+  ));
+
+  return {
+    type: deliveryFailed ? 'failed' : 'reported',
+    message: deliveryFailed
+      ? `Telegram announcement delivery failed (${fieldDetails}). Check the bot's group permissions and retry only after confirming the session state.`
+      : `Telegram announcement delivery reported by the backend (${fieldDetails}).`,
+  };
+};
 
 const formatBackendResponse = (data) => JSON.stringify(data, (key, value) => (
   /token|secret|password/i.test(key) ? '[redacted]' : value
@@ -117,25 +136,30 @@ export default function OrderSessionsPage() {
     setFeedback(null);
     try {
       const response = await api.post(`/admin/order-sessions/${id}/start`);
-      const responseData = unwrapApiData(response);
-      const result = responseData && typeof responseData === 'object' ? responseData : {};
+      const responseBody = response.data && typeof response.data === 'object' ? response.data : {};
+      if (responseBody.success === false || responseBody.session_started === false) {
+        throw new Error(responseBody.message || 'The backend did not confirm that the order session started.');
+      }
       const refreshedSessions = await fetchSessions();
       const refreshedSession = refreshedSessions?.find((session) => String(session.id) === String(id));
-      const sessionStarted = result.success !== false
+      const sessionStarted = responseBody.session_started === true
         && String(refreshedSession?.status || '').toUpperCase() === 'OPEN';
-      const responseDetails = responseData === null
-        ? ''
-        : typeof responseData === 'string'
-          ? responseData
-          : formatBackendResponse(responseData);
+      const deliveryFeedback = getAnnouncementDeliveryFeedback(responseBody);
+      const responseDetails = formatBackendResponse(responseBody);
       setFeedback({
-        type: sessionStarted ? 'success' : 'warning',
+        type: sessionStarted
+          && deliveryFeedback?.type !== 'failed'
+          && responseBody.announcement_sent === true
+          ? 'success'
+          : 'warning',
         sessionMessage: sessionStarted
-          ? (typeof result.message === 'string' ? result.message : 'Order session started successfully.')
-          : (typeof result.message === 'string'
-            ? result.message
+          ? (typeof responseBody.message === 'string' ? responseBody.message : 'Order session started successfully.')
+          : (typeof responseBody.message === 'string'
+            ? responseBody.message
             : 'The start request was accepted, but the refreshed status does not confirm that the session is open.'),
-        deliveryMessage: 'Telegram announcement delivery is not inferred from HTTP success. See the backend response below if it reports delivery.',
+        deliveryMessage: deliveryFeedback?.message
+          || 'Telegram announcement delivery was not reported by the backend. Check the backend response and the group before retrying.',
+        deliveryType: deliveryFeedback?.type,
         responseDetails,
       });
     } catch (err) {
@@ -152,6 +176,17 @@ export default function OrderSessionsPage() {
         );
       } else {
         setError(requestMessage);
+      }
+
+      const deliveryFeedback = getAnnouncementDeliveryFeedback(err.response?.data);
+      if (deliveryFeedback) {
+        setFeedback({
+          type: 'warning',
+          sessionMessage: err.response?.data?.message || requestMessage,
+          deliveryMessage: deliveryFeedback.message,
+          deliveryType: deliveryFeedback.type,
+          responseDetails: formatBackendResponse(err.response.data),
+        });
       }
     } finally {
       setActionId(null);
