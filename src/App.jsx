@@ -6,6 +6,7 @@ import ProductsPage from './pages/Admin/ProductsPage';
 import ReportsPage from './pages/Admin/ReportsPage';
 import OrderSessionsPage from './pages/Admin/OrderSessionsPage';
 import TelegramSettingsPage from './pages/Admin/TelegramSettingsPage';
+import TelegramCustomersPage from './pages/Admin/TelegramCustomersPage';
 import CartPage from './pages/CartPage';
 import LoginPage from './pages/Admin/LoginPage';
 import RegisterPage from './pages/Admin/RegisterPage';
@@ -45,6 +46,7 @@ function App() {
           <Route path="products" element={<ProductsPage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="telegram-settings" element={<TelegramSettingsPage />} />
+          <Route path="telegram-customers" element={<TelegramCustomersPage />} />
         </Route>
 
         {/* Explicit Customer Menu Fallback Route */}

@@ -29,6 +29,7 @@ export default function AdminLayout() {
             ['/admin/products', '🍔 Products & Categories'],
             ['/admin/reports', '📈 Sales Reports'],
             ['/admin/telegram-settings', '🤖 Telegram Bot'],
+            ['/admin/telegram-customers', '👥 Telegram Customers'],
           ].map(([to, label]) => (
             <NavLink
               key={to}

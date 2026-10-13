@@ -37,20 +37,28 @@ The frontend reports Telegram delivery as confirmed only when the start/close re
 
 For group announcements, configure the bot's **Main Mini App** in Telegram before using the direct link button. The backend-owned announcement should use Telegram's Main Mini App direct-link format `https://t.me/<bot_username>?startapp=order_<session_id>` as an URL button. Do not substitute a regular web URL button: the configured Mini App must open as a Telegram Mini App. The bot username and Telegram configuration are intentionally not guessed or stored in frontend code. See [Telegram Mini App direct links](https://core.telegram.org/bots/webapps#direct-links).
 
+The Laravel backend checks Telegram `getMe` before sending a Main Mini App announcement: the configured link username must match the actual bot, and Telegram must report `has_main_web_app: true`. If that check fails, it records announcement delivery as failed instead of posting a button that Telegram Desktop or mobile cannot open. Configure the Main Mini App in BotFather, then verify the admin start response reports successful announcement delivery.
+
 The Mini App reads `Telegram.WebApp.initDataUnsafe.start_param` and accepts only the `order_<positive-safe-integer>` form. The signed `initData` is sent in `X-Telegram-Init-Data`; Laravel verifies its signature and resolves the session ID from the signed `start_param` on the existing `GET /mini-app/order-session/current` endpoint. That endpoint returns the session in the existing `data` response envelope, including `id`, `title`, `status`, `expires_at`, and boolean `ordering_allowed` (`can_order` remains as a backwards-compatible alias). React rejects a response whose session ID does not match the launch parameter and blocks checkout when `ordering_allowed` is false. Laravel enforces session state and expiration again when accepting an order. The launch parameter is a session selector, not authentication. If there is no Telegram `start_param`, the existing current-session behavior is retained for compatibility.
 
-This repository contains only the frontend. It cannot configure or verify the bot's Main Mini App, change Laravel to resolve `start_param`, or confirm the group message's URL button. Deploy the corresponding backend contract and bot configuration before testing the complete flow; no Bot API request or token is added to React.
+The frontend does not configure the bot or call Telegram's Bot API. Laravel owns link construction, bot identity/configuration checks, and announcement delivery. Deploy the backend contract and configure the Main Mini App in BotFather before testing the complete flow; no Bot API request or token is added to React.
 
-The existing reporting requests send `date_from` and `date_to` as `YYYY-MM-DD`. This repository does not specify the backend timezone or whether `date_to` is inclusive. Laravel must document and implement those semantics for inclusive calendar-day filtering to be guaranteed.
+Existing sales reports accept `date_from` and `date_to` as `YYYY-MM-DD`. Telegram customer requests use the Laravel `BUSINESS_TIMEZONE`; date boundaries are inclusive calendar days, and an omitted range defaults to today in that timezone.
 
-### Missing backend contract for Admin order management
+### Telegram customer management
 
-There is no Admin orders endpoint in the frontend's existing route usage. The only Admin report endpoints return aggregate sales/product reports, not paginated order records. Therefore, no order/customer management screen has been wired to a guessed URL or populated with fabricated data. To implement the requested Admin order table, filtering, details, and per-session summary, provide the real Laravel route/method and response schema for:
+The page uses these authenticated Laravel routes:
 
-- Paginated Admin orders, including supported search/filter parameters and pagination metadata.
-- Customer identity fields from verified Telegram data (display name, username, numeric Telegram user ID), order number/time/status, session ID/name, saved total, and item/product details including image and unit price.
-- Session-filter options and the per-session aggregate counts (unique customers, orders, item quantity, sales).
-- Any Admin order detail route and whether the list embeds the full item details.
+| Method | API path | Purpose |
+| --- | --- | --- |
+| `GET` | `/admin/customers` | Server-filtered and paginated customers, including order count, latest order, and spending for the selected range |
+| `GET` | `/admin/customers/{customer}/orders` | Filtered, paginated order history with saved item name, unit price, quantity, subtotal, session, status, and order total |
+| `POST` | `/admin/customers/{customer}/messages` | Send a private Telegram message through Laravel; the UI reports success only when `delivered: true` and message status is `sent` |
+| `DELETE` | `/admin/customers/{customer}` | Deactivate a customer while preserving order history |
+
+The customer list supports `date_from`, `date_to`, `search`, `page`, and `per_page`. Order history additionally supports `order_session_id` and `status`. Laravel applies search, date filtering, aggregation, and pagination; the browser does not download all orders to build customer totals. Missing usernames are displayed as “No username”. For private messages, the bot token remains server-side; a customer must open [@ahseven_bot](https://t.me/ahseven_bot) and press **Start** before the bot can initiate a private conversation. Deactivation is not a permanent deletion.
+
+The API contract and response examples are documented in the backend repository's `docs/customer-management-api.md`.
 
 The frontend likewise cannot confirm the Mini App product availability flag, quantity maximum, or exact saved-order/Telegram delivery response fields without the Laravel response schema. Current behavior uses `is_available` when present, keeps a positive cart quantity, displays the saved order response when returned, and falls back to the existing `/mini-app/my-order` refresh.
 
