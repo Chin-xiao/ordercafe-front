@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import api from '../../api/axios';
 import { getApiErrorMessage } from '../../api/errors';
+import { formatRiel } from '../../utils/currency';
 
 export default function MyOrderPage() {
   const location = useLocation();
@@ -15,7 +16,9 @@ export default function MyOrderPage() {
       setLoading(true);
       setError('');
       const response = await api.get('/mini-app/my-order');
-      setOrder(response.data.data || response.data);
+      const refreshedOrder = response.data?.data
+        || (response.data?.id ? response.data : null);
+      if (refreshedOrder) setOrder(refreshedOrder);
     } catch (err) {
       setError(getApiErrorMessage(err, 'No active order found for this session.'));
     } finally {
@@ -99,7 +102,7 @@ export default function MyOrderPage() {
           {/* Session Title */}
           <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 flex justify-between items-center text-xs">
             <span className="text-gray-500 font-semibold">Session:</span>
-            <span className="font-bold text-gray-800">{order?.order_session?.title || 'Cafe Run'}</span>
+            <span className="font-bold text-gray-800">{order?.session?.title || order?.order_session?.title || 'Cafe Run'}</span>
           </div>
 
           {/* Items List */}
@@ -109,11 +112,16 @@ export default function MyOrderPage() {
               {order?.items?.map((item, idx) => (
                 <div key={idx} className="py-2.5 flex justify-between items-center text-sm">
                   <div>
-                    <h4 className="font-semibold text-gray-800">{item.product?.name || item.name}</h4>
-                    <p className="text-xs text-gray-400">Qty: {item.quantity}</p>
+                    <h4 className="font-semibold text-gray-800">{item.product_name || item.product?.name || item.name}</h4>
+                    <p className="text-xs text-gray-400">
+                      {item.sugar_percent !== null && item.sugar_percent !== undefined
+                        ? `${item.sugar_percent}% sugar · `
+                        : ''}
+                      Qty: {item.quantity} · {formatRiel(item.unit_price ?? item.price)} each
+                    </p>
                   </div>
                   <span className="font-bold text-emerald-600">
-                    ${(Number(item.price) * item.quantity).toFixed(2)}
+                    {formatRiel(item.subtotal ?? Number(item.unit_price ?? item.price) * Number(item.quantity))}
                   </span>
                 </div>
               ))}
@@ -130,7 +138,7 @@ export default function MyOrderPage() {
           {/* Total Price Bar */}
           <div className="border-t border-gray-100 pt-3 flex justify-between items-center text-base font-bold text-gray-800">
             <span>Total Paid:</span>
-            <span className="text-emerald-600 text-lg">${Number(order?.total_price || 0).toFixed(2)}</span>
+            <span className="text-emerald-600 text-lg">{formatRiel(order?.total_amount ?? order?.total_price)}</span>
           </div>
 
           <button

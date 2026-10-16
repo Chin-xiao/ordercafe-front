@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import { getApiErrorMessage } from '../../api/errors';
+import { formatRiel } from '../../utils/currency';
 import { getOrderSessionLaunch, getTelegramUser, getTelegramWebApp } from '../../utils/telegram';
 import {
   formatDateTime,
@@ -11,6 +12,7 @@ import {
   unwrapApiData,
 } from '../../utils/orderSession';
 import CartCheckoutModal from './CartCheckoutModal';
+import SugarSelectionModal from './SugarSelectionModal';
 
 const SESSION_REFRESH_MS = 15000;
 const INITIAL_NOW = Date.now();
@@ -41,6 +43,7 @@ export default function MiniAppProductsPage() {
   const launch = getOrderSessionLaunch();
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
+  const [sugarOptions, setSugarOptions] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState([]);
@@ -50,6 +53,8 @@ export default function MiniAppProductsPage() {
   const [session, setSession] = useState(null);
   const [sessionVerified, setSessionVerified] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [sugarProduct, setSugarProduct] = useState(null);
+  const [sugarSelectionKey, setSugarSelectionKey] = useState(0);
   const [now, setNow] = useState(INITIAL_NOW);
   const [customerName, setCustomerName] = useState('');
 
@@ -91,15 +96,24 @@ export default function MiniAppProductsPage() {
       ]);
       const categoryList = unwrapApiData(categoryResponse);
       const productList = unwrapApiData(productResponse);
-      if (!Array.isArray(categoryList) || !Array.isArray(productList)) {
+      const options = productResponse.data?.sugar_percent_options;
+      if (
+        !Array.isArray(categoryList) ||
+        !Array.isArray(productList) ||
+        !Array.isArray(options) ||
+        options.length === 0 ||
+        options.some((option) => !Number.isInteger(Number(option)))
+      ) {
         throw new Error('The API returned an invalid menu response.');
       }
       setCategories(categoryList);
       setProducts(productList);
+      setSugarOptions(options.map(Number));
     } catch (err) {
       console.error('Failed to load menu items', err);
       setCategories([]);
       setProducts([]);
+      setSugarOptions([]);
       setError(getApiErrorMessage(err, 'Failed to load menu items.'));
     } finally {
       setLoading(false);
@@ -137,28 +151,31 @@ export default function MiniAppProductsPage() {
   const nearExpiration = orderingOpen && secondsRemaining !== null && secondsRemaining <= 300;
   const initDataAvailable = Boolean(window.Telegram?.WebApp?.initData);
 
-  const handleAddToCart = (product) => {
-    setCart((previousCart) => {
-      const existing = previousCart.find((item) => item.id === product.id);
-      if (existing) {
-        return previousCart.map((item) =>
-          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-        );
-      }
-      return [...previousCart, { ...product, quantity: 1 }];
-    });
+  const handleChooseSugar = (product) => {
+    setSugarSelectionKey((value) => value + 1);
+    setSugarProduct(product);
   };
 
-  const handleUpdateQuantity = (productId, delta) => {
-    setCart((previousCart) =>
-      previousCart
-        .map((item) => {
-          if (item.id !== productId) return item;
-          const quantity = item.quantity + delta;
-          return quantity > 0 ? { ...item, quantity } : null;
-        })
-        .filter(Boolean)
-    );
+  const handleAddToCart = (product, sugarPercent, quantity) => {
+    const cartId = `${product.id}:${sugarPercent}`;
+    const existing = cart.find((item) => item.cart_id === cartId);
+    if (existing && existing.quantity + quantity > 100) return false;
+
+    setCart((previousCart) => {
+      if (existing) {
+        return previousCart.map((item) =>
+          item.cart_id === cartId ? { ...item, quantity: item.quantity + quantity } : item
+        );
+      }
+      return [...previousCart, {
+        ...product,
+        cart_id: cartId,
+        sugar_percent: sugarPercent,
+        quantity,
+      }];
+    });
+    setSugarProduct(null);
+    return true;
   };
 
   const filteredProducts = selectedCategory === 'all'
@@ -298,7 +315,6 @@ export default function MiniAppProductsPage() {
       {!error && (
         <div className="mx-auto grid max-w-3xl grid-cols-2 gap-3 p-4 sm:grid-cols-3 sm:gap-4">
           {visibleProducts.map((product) => {
-            const cartItem = cart.find((item) => item.id === product.id);
             const unavailable = product.is_available === false;
             return (
               <article key={product.id} className={`flex flex-col justify-between overflow-hidden rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md ${unavailable ? 'border-stone-200 opacity-75' : 'border-stone-100'}`}>
@@ -314,37 +330,28 @@ export default function MiniAppProductsPage() {
                   <div className="p-3 sm:p-4">
                     <h2 className="line-clamp-2 min-h-10 text-sm font-bold text-stone-900">{product.name}</h2>
                     {product.description && <p className="mt-1 line-clamp-2 min-h-8 text-xs leading-relaxed text-stone-500">{product.description}</p>}
-                    <p className="mt-2 text-sm font-bold text-emerald-700">${Number(product.price).toFixed(2)}</p>
+                    <p className="mt-2 text-sm font-bold text-emerald-700">{formatRiel(product.price)}</p>
                     <p className={`mt-1 text-[11px] font-medium ${unavailable ? 'text-red-700' : 'text-stone-500'}`}>
                       {unavailable ? 'Currently unavailable' : product.is_available === true ? 'Available' : 'Availability not provided'}
                     </p>
                   </div>
                 </div>
                 <div className="p-3 pt-0">
-                  {cartItem ? (
-                    <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 p-1">
-                      <button
-                        aria-label={`Remove one ${product.name}`}
-                        onClick={() => handleUpdateQuantity(product.id, -1)}
-                        className="h-9 w-9 rounded-lg bg-white font-bold text-emerald-700 shadow-sm"
-                      >−</button>
-                      <span className="text-sm font-bold text-emerald-800" aria-live="polite">{cartItem.quantity}</span>
-                      <button
-                        aria-label={`Add one ${product.name}`}
-                        onClick={() => handleUpdateQuantity(product.id, 1)}
-                        disabled={unavailable}
-                        className="h-9 w-9 rounded-lg bg-emerald-700 font-bold text-white shadow-sm disabled:opacity-50"
-                      >+</button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => handleAddToCart(product)}
-                      disabled={!orderingOpen || unavailable}
-                      className="w-full rounded-xl bg-emerald-700 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-stone-300"
-                    >
-                      {unavailable ? 'Unavailable' : '+ Add to Cart'}
-                    </button>
+                  {cart.some((item) => String(item.id) === String(product.id)) && (
+                    <p className="mb-2 text-[11px] text-stone-500">
+                      In cart: {cart
+                        .filter((item) => String(item.id) === String(product.id))
+                        .map((item) => `${item.sugar_percent}% × ${item.quantity}`)
+                        .join(' · ')}
+                    </p>
                   )}
+                  <button
+                    onClick={() => handleChooseSugar(product)}
+                    disabled={!orderingOpen || unavailable}
+                    className="w-full min-h-11 rounded-xl bg-emerald-700 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-stone-300"
+                  >
+                    {unavailable ? 'Unavailable' : '+ Choose Sugar & Add'}
+                  </button>
                 </div>
               </article>
             );
@@ -361,7 +368,7 @@ export default function MiniAppProductsPage() {
         <div className="fixed bottom-0 left-0 right-0 z-30 mx-auto flex max-w-3xl items-center justify-between gap-3 border-t border-stone-200 bg-white/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(28,25,23,0.08)] backdrop-blur">
           <div>
             <p className="text-xs text-stone-500">{totalCartItems} items selected</p>
-            <p className="text-base font-bold text-stone-900">${totalCartPrice.toFixed(2)}</p>
+            <p className="text-base font-bold text-stone-900">{formatRiel(totalCartPrice)}</p>
           </div>
           <button
             onClick={() => setShowCheckout(true)}
@@ -382,6 +389,13 @@ export default function MiniAppProductsPage() {
         orderingOpen={orderingOpen}
         initDataAvailable={initDataAvailable}
         onOrderSuccess={(order) => navigate('/my-order', { state: { order } })}
+      />
+      <SugarSelectionModal
+        key={sugarSelectionKey}
+        product={sugarProduct}
+        sugarOptions={sugarOptions}
+        onClose={() => setSugarProduct(null)}
+        onAdd={handleAddToCart}
       />
     </div>
   );

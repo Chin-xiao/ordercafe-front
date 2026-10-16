@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import api from '../../api/axios';
 import { getApiErrorMessage } from '../../api/errors';
+import { formatRiel } from '../../utils/currency';
 import { getInitData } from '../../utils/telegram';
 import { isOrderSessionOpen, unwrapApiData } from '../../utils/orderSession';
 
@@ -24,11 +25,11 @@ export default function CartCheckoutModal({
 
   const subtotal = cart.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
 
-  const handleUpdateQuantity = (productId, delta) => {
+  const handleUpdateQuantity = (cartId, delta) => {
     setCart((previousCart) =>
       previousCart
         .map((item) => {
-          if (item.id !== productId) return item;
+          if (item.cart_id !== cartId) return item;
           const quantity = item.quantity + delta;
           return quantity > 0 ? { ...item, quantity } : null;
         })
@@ -36,8 +37,8 @@ export default function CartCheckoutModal({
     );
   };
 
-  const handleRemoveItem = (productId) => {
-    setCart((previousCart) => previousCart.filter((item) => item.id !== productId));
+  const handleRemoveItem = (cartId) => {
+    setCart((previousCart) => previousCart.filter((item) => item.cart_id !== cartId));
   };
 
   const handleCheckout = async () => {
@@ -55,6 +56,12 @@ export default function CartCheckoutModal({
       }
       if (cart.length === 0) {
         throw new Error('Your cart is empty.');
+      }
+      if (cart.some((item) => !Number.isInteger(item.sugar_percent))) {
+        throw new Error('Choose a sugar percentage for every drink before submitting.');
+      }
+      if (cart.some((item) => item.quantity > 100)) {
+        throw new Error('Each drink and sugar combination is limited to 100 items per order.');
       }
 
       const sessionResponse = await api.get('/mini-app/order-session/current');
@@ -74,6 +81,7 @@ export default function CartCheckoutModal({
         items: cart.map((item) => ({
           product_id: item.id,
           quantity: item.quantity,
+          sugar_percent: item.sugar_percent,
         })),
       });
 
@@ -130,12 +138,12 @@ export default function CartCheckoutModal({
           {cart.length === 0 ? (
             <p className="text-center text-gray-400 py-8 text-sm">Your cart is empty.</p>
           ) : cart.map((item) => (
-            <div key={item.id} className="pt-3 flex justify-between items-center gap-3">
+            <div key={item.cart_id} className="pt-3 flex justify-between items-center gap-3">
               <div className="min-w-0">
                 <h3 className="font-semibold text-sm text-gray-800">{item.name}</h3>
-                <p className="text-xs text-emerald-600 font-medium">${Number(item.price).toFixed(2)} each</p>
+                <p className="text-xs text-gray-500">{item.sugar_percent}% sugar · {item.quantity} × {formatRiel(item.price)}</p>
                 <button
-                  onClick={() => handleRemoveItem(item.id)}
+                  onClick={() => handleRemoveItem(item.cart_id)}
                   disabled={loading}
                   className="mt-1 text-xs text-red-600 underline"
                 >
@@ -145,21 +153,21 @@ export default function CartCheckoutModal({
               <div className="flex items-center gap-3 shrink-0">
                 <div className="flex items-center bg-gray-50 rounded-lg border border-gray-200 p-1">
                   <button
-                    onClick={() => handleUpdateQuantity(item.id, -1)}
+                    onClick={() => handleUpdateQuantity(item.cart_id, -1)}
                     disabled={loading}
                     aria-label={`Remove one ${item.name}`}
                     className="w-7 h-7 bg-white text-gray-700 font-bold rounded shadow-xs text-xs disabled:opacity-50"
                   >−</button>
                   <span className="w-7 text-center text-xs font-bold text-gray-800">{item.quantity}</span>
                   <button
-                    onClick={() => handleUpdateQuantity(item.id, 1)}
-                    disabled={loading}
+                    onClick={() => handleUpdateQuantity(item.cart_id, 1)}
+                    disabled={loading || item.quantity >= 100}
                     aria-label={`Add one ${item.name}`}
                     className="w-7 h-7 bg-emerald-600 text-white font-bold rounded shadow-xs text-xs disabled:opacity-50"
                   >+</button>
                 </div>
                 <span className="text-sm font-bold text-gray-800 w-16 text-right">
-                  ${(Number(item.price) * item.quantity).toFixed(2)}
+                  {formatRiel(Number(item.price) * item.quantity)}
                 </span>
               </div>
             </div>
@@ -184,7 +192,7 @@ export default function CartCheckoutModal({
           <div className="pt-3 border-t border-gray-100 space-y-3">
             <div className="flex justify-between items-center text-base font-bold text-gray-800">
               <span>Subtotal (estimate):</span>
-              <span className="text-emerald-600 text-lg">${subtotal.toFixed(2)}</span>
+              <span className="text-emerald-600 text-lg">{formatRiel(subtotal)}</span>
             </div>
             <p className="text-xs text-gray-500">The backend recalculates the final total using current product prices.</p>
             <button
