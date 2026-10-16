@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
+import { getMenuData } from '../../api/menu';
 import { getApiErrorMessage } from '../../api/errors';
 import { formatRiel } from '../../utils/currency';
 import { getOrderSessionLaunch, getTelegramUser, getTelegramWebApp } from '../../utils/telegram';
@@ -17,26 +18,109 @@ import SugarSelectionModal from './SugarSelectionModal';
 const SESSION_REFRESH_MS = 15000;
 const INITIAL_NOW = Date.now();
 
-function ProductImage({ product }) {
+const ProductImage = React.memo(function ProductImage({ product, eager = false }) {
+  const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   if (!product.image_url || failed) {
     return (
-      <div className="flex aspect-[4/3] w-full items-center justify-center bg-stone-100 text-xs text-stone-400">
+      <div className="flex aspect-[4/3] w-full items-center justify-center bg-stone-100 text-xs text-stone-400" aria-label={`Image unavailable for ${product.name}`}>
         Image unavailable
       </div>
     );
   }
 
   return (
-    <img
-      src={product.image_url}
-      alt={product.name}
-      loading="lazy"
-      onError={() => setFailed(true)}
-      className="aspect-[4/3] w-full bg-stone-100 object-cover"
-    />
+    <div className="relative aspect-[4/3] w-full overflow-hidden bg-stone-100">
+      {!loaded && <div aria-hidden="true" className="absolute inset-0 bg-stone-100" />}
+      <img
+        src={product.image_url}
+        alt={product.name}
+        width="480"
+        height="360"
+        loading={eager ? 'eager' : 'lazy'}
+        decoding="async"
+        fetchPriority={eager ? 'high' : 'auto'}
+        onLoad={() => setLoaded(true)}
+        onError={() => setFailed(true)}
+        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-150 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+      />
+    </div>
   );
-}
+});
+
+const SessionHeader = React.memo(function SessionHeader({ session, sessionVerified, sessionError, customerName, onRefresh }) {
+  const [now, setNow] = useState(INITIAL_NOW);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const status = getSessionStatus(session, now);
+  const orderingOpen = sessionVerified && isOrderSessionOpen(session, now);
+  const expirationMs = session?.expires_at ? new Date(session.expires_at).getTime() : NaN;
+  const secondsRemaining = Number.isFinite(expirationMs)
+    ? Math.max(0, Math.floor((expirationMs - now) / 1000))
+    : null;
+  const nearExpiration = orderingOpen && secondsRemaining !== null && secondsRemaining <= 300;
+
+  return (
+    <>
+      <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-emerald-800/10 bg-emerald-700 px-4 py-3 text-white shadow-sm">
+        <div>
+          <h1 className="text-base font-bold leading-tight">{session?.title || 'Cafe Menu'}</h1>
+          <p className="mt-0.5 text-xs text-emerald-100">
+            {customerName ? `Welcome, ${customerName}` : 'Fresh from the cafe'}
+          </p>
+        </div>
+        <div className="max-w-[45%] rounded-full bg-emerald-800 px-3 py-1.5 text-right text-[11px] font-semibold leading-tight">
+          {orderingOpen
+            ? `Open · Closes ${new Date(session.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+            : session
+              ? status.toLowerCase() === 'expired' ? 'Expired' : 'Ordering closed'
+              : sessionVerified
+                ? 'No Session'
+                : 'Checking...'}
+        </div>
+      </header>
+      <section
+        role={nearExpiration ? 'alert' : undefined}
+        className={`mx-4 mt-4 rounded-xl border p-3 text-sm ${
+          orderingOpen
+            ? nearExpiration
+              ? 'border-amber-300 bg-amber-50 text-amber-900'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            : 'border-red-200 bg-red-50 text-red-800'
+        }`}
+      >
+        {orderingOpen ? (
+          <>
+            <p className="font-bold">{session.title}</p>
+            <p>Ordering closes at {new Date(session.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {formatDateTime(session.expires_at)}</p>
+            <p className="font-semibold">
+              {nearExpiration ? 'Hurry, ordering closes soon: ' : 'Time remaining: '}
+              {formatRemainingTime(session.expires_at, now)}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="font-bold">Ordering is closed</p>
+            <p>
+              {session?.expires_at
+                ? `This ordering session is ${status.toLowerCase()}. It closed at ${formatDateTime(session.expires_at)}.`
+                : 'There is no currently open order session.'}
+            </p>
+            {(sessionError || !sessionVerified) && (
+              <p className="mt-1">{sessionError || 'Verifying session status with the server...'}</p>
+            )}
+            <button type="button" onClick={onRefresh} className="mt-2 min-h-11 font-semibold underline">
+              Refresh session status
+            </button>
+          </>
+        )}
+      </section>
+    </>
+  );
+});
 
 export default function MiniAppProductsPage() {
   const navigate = useNavigate();
@@ -57,99 +141,134 @@ export default function MiniAppProductsPage() {
   const [sugarSelectionKey, setSugarSelectionKey] = useState(0);
   const [now, setNow] = useState(INITIAL_NOW);
   const [customerName, setCustomerName] = useState('');
+  const menuRequestRef = useRef(null);
+  const sessionRequestRef = useRef(null);
+  const sessionSignalRef = useRef(null);
+  const menuSignalRef = useRef(null);
 
-  const fetchSession = useCallback(async () => {
-    setSessionVerified(false);
-    setSessionError(launch.error);
+  const fetchSession = useCallback((signal) => {
+    if (sessionRequestRef.current) return sessionRequestRef.current;
     if (launch.error) {
       setSession(null);
+      setSessionError(launch.error);
       setSessionVerified(true);
-      return null;
+      return Promise.resolve(null);
     }
 
-    try {
-      const response = await api.get('/mini-app/order-session/current');
-      const activeSession = unwrapApiData(response);
-      if (launch.sessionId && String(activeSession?.id) !== String(launch.sessionId)) {
-        throw new Error(activeSession
-          ? 'The server returned a different order session than the one in this Telegram link.'
-          : 'The order session from this Telegram link could not be found.');
+    const request = (async () => {
+      try {
+        const response = await api.get('/mini-app/order-session/current', { signal });
+        const activeSession = unwrapApiData(response);
+        if (launch.sessionId && String(activeSession?.id) !== String(launch.sessionId)) {
+          throw new Error(activeSession
+            ? 'The server returned a different order session than the one in this Telegram link.'
+            : 'The order session from this Telegram link could not be found.');
+        }
+        const nextSession = activeSession && typeof activeSession === 'object' ? activeSession : null;
+        setSession((previous) => {
+          if (
+            previous?.id === nextSession?.id &&
+            previous?.title === nextSession?.title &&
+            previous?.status === nextSession?.status &&
+            previous?.expires_at === nextSession?.expires_at &&
+            previous?.ordering_allowed === nextSession?.ordering_allowed
+          ) return previous;
+          return nextSession;
+        });
+        setSessionError('');
+        setSessionVerified(true);
+        setNow(Date.now());
+        return nextSession;
+      } catch (err) {
+        if (signal?.aborted) return null;
+        console.error('Failed to load the current order session', err);
+        setSessionVerified(false);
+        setSessionError(getApiErrorMessage(err, 'Unable to verify the order session.'));
+        return null;
       }
-      setSession(activeSession && typeof activeSession === 'object' ? activeSession : null);
-      setSessionVerified(true);
-      return activeSession;
-    } catch (err) {
-      console.error('Failed to load the current order session', err);
-      setSession(null);
-      setSessionError(getApiErrorMessage(err, 'Unable to verify the order session.'));
-      return null;
-    }
+    })();
+    sessionRequestRef.current = request;
+    request.finally(() => {
+      if (sessionRequestRef.current === request) sessionRequestRef.current = null;
+    });
+    return request;
   }, [launch.error, launch.sessionId]);
 
-  const fetchMenu = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError('');
-      const [categoryResponse, productResponse] = await Promise.all([
-        api.get('/mini-app/categories'),
-        api.get('/mini-app/products'),
-      ]);
-      const categoryList = unwrapApiData(categoryResponse);
-      const productList = unwrapApiData(productResponse);
-      const options = productResponse.data?.sugar_percent_options;
-      if (
-        !Array.isArray(categoryList) ||
-        !Array.isArray(productList) ||
-        !Array.isArray(options) ||
-        options.length === 0 ||
-        options.some((option) => !Number.isInteger(Number(option)))
-      ) {
-        throw new Error('The API returned an invalid menu response.');
+  const refreshSessionStatus = useCallback(
+    () => fetchSession(sessionSignalRef.current),
+    [fetchSession]
+  );
+
+  const fetchMenu = useCallback((signal, force = false) => {
+    if (menuRequestRef.current) return menuRequestRef.current;
+
+    const request = (async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const menu = await getMenuData(signal, { force });
+        if (signal?.aborted) return;
+        setCategories(menu.categories);
+        setProducts(menu.products);
+        setSugarOptions(menu.sugarOptions);
+      } catch (err) {
+        if (signal?.aborted || err.code === 'ERR_CANCELED' || err.name === 'AbortError') return;
+        console.error('Failed to load menu items', err);
+        setError(getApiErrorMessage(err, 'Failed to load menu items.'));
+      } finally {
+        if (!signal?.aborted) setLoading(false);
       }
-      setCategories(categoryList);
-      setProducts(productList);
-      setSugarOptions(options.map(Number));
-    } catch (err) {
-      console.error('Failed to load menu items', err);
-      setCategories([]);
-      setProducts([]);
-      setSugarOptions([]);
-      setError(getApiErrorMessage(err, 'Failed to load menu items.'));
-    } finally {
-      setLoading(false);
-    }
+    })();
+    menuRequestRef.current = request;
+    request.finally(() => {
+      if (menuRequestRef.current === request) menuRequestRef.current = null;
+    });
+    return request;
   }, []);
 
   useEffect(() => {
     getTelegramWebApp();
+    const controller = new AbortController();
+    sessionSignalRef.current = controller.signal;
+    menuSignalRef.current = controller.signal;
     const startup = window.setTimeout(() => {
       const telegramUser = getTelegramUser();
       setCustomerName([telegramUser?.first_name, telegramUser?.last_name].filter(Boolean).join(' '));
-      fetchMenu();
-      fetchSession();
+      fetchMenu(controller.signal);
+      fetchSession(controller.signal);
     }, 0);
-    const clock = window.setInterval(() => setNow(Date.now()), 1000);
-    const refresh = window.setInterval(fetchSession, SESSION_REFRESH_MS);
+    const refresh = window.setInterval(() => fetchSession(controller.signal), SESSION_REFRESH_MS);
     const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') fetchSession();
+      if (document.visibilityState === 'visible') {
+        fetchMenu(controller.signal);
+        fetchSession(controller.signal);
+      }
     };
     document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {
       window.clearTimeout(startup);
-      window.clearInterval(clock);
       window.clearInterval(refresh);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
+      sessionSignalRef.current = null;
+      menuSignalRef.current = null;
+      sessionRequestRef.current = null;
+      menuRequestRef.current = null;
+      controller.abort();
     };
   }, [fetchMenu, fetchSession]);
 
-  const status = getSessionStatus(session, now);
   const orderingOpen = sessionVerified && isOrderSessionOpen(session, now);
-  const expirationMs = session?.expires_at ? new Date(session.expires_at).getTime() : NaN;
-  const secondsRemaining = Number.isFinite(expirationMs)
-    ? Math.max(0, Math.floor((expirationMs - now) / 1000))
-    : null;
-  const nearExpiration = orderingOpen && secondsRemaining !== null && secondsRemaining <= 300;
   const initDataAvailable = Boolean(window.Telegram?.WebApp?.initData);
+
+  useEffect(() => {
+    const expiration = session?.expires_at ? new Date(session.expires_at).getTime() : NaN;
+    if (!sessionVerified || !Number.isFinite(expiration) || expiration <= Date.now()) return undefined;
+    const timeout = window.setTimeout(
+      () => setNow(Date.now()),
+      Math.min(expiration - Date.now() + 10, 2147483647)
+    );
+    return () => window.clearTimeout(timeout);
+  }, [session?.expires_at, sessionVerified]);
 
   const handleChooseSugar = (product) => {
     setSugarSelectionKey((value) => value + 1);
@@ -178,93 +297,41 @@ export default function MiniAppProductsPage() {
     return true;
   };
 
-  const filteredProducts = selectedCategory === 'all'
-    ? products
-    : products.filter((product) => String(product.category_id) === String(selectedCategory));
-  const visibleProducts = filteredProducts.filter((product) => {
+  const visibleProducts = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
-    return !query || `${product.name || ''} ${product.description || ''}`.toLocaleLowerCase().includes(query);
-  });
-  const totalCartPrice = cart.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
-  const totalCartItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-screen bg-gray-50 text-gray-500 text-sm">
-        <div className="w-full max-w-lg px-4" aria-label="Loading cafe menu">
-          <div className="mb-4 h-6 w-40 animate-pulse rounded bg-stone-200" />
-          <div className="grid grid-cols-2 gap-3">
-            {[0, 1, 2, 3].map((item) => (
-              <div key={item} className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
-                <div className="aspect-[4/3] animate-pulse bg-stone-200" />
-                <div className="space-y-2 p-3">
-                  <div className="h-4 w-3/4 animate-pulse rounded bg-stone-200" />
-                  <div className="h-3 w-1/3 animate-pulse rounded bg-stone-200" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+    return products.filter((product) => (
+      (selectedCategory === 'all' || String(product.category_id) === String(selectedCategory)) &&
+      (!query || `${product.name || ''} ${product.description || ''}`.toLocaleLowerCase().includes(query))
+    ));
+  }, [products, search, selectedCategory]);
+  const cartByProduct = useMemo(() => {
+    const groups = new Map();
+    cart.forEach((item) => {
+      const id = String(item.id);
+      const entries = groups.get(id) || [];
+      entries.push(item);
+      groups.set(id, entries);
+    });
+    return groups;
+  }, [cart]);
+  const totalCartPrice = useMemo(
+    () => cart.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0),
+    [cart]
+  );
+  const totalCartItems = useMemo(
+    () => cart.reduce((sum, item) => sum + item.quantity, 0),
+    [cart]
+  );
 
   return (
     <div className="pb-28 bg-gray-50 min-h-screen text-gray-800">
-      <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-emerald-800/10 bg-emerald-700 px-4 py-3 text-white shadow-sm">
-        <div>
-          <h1 className="text-base font-bold leading-tight">{session?.title || 'Cafe Menu'}</h1>
-          <p className="mt-0.5 text-xs text-emerald-100">
-            {customerName ? `Welcome, ${customerName}` : 'Fresh from the cafe'}
-          </p>
-        </div>
-        <div className="max-w-[45%] rounded-full bg-emerald-800 px-3 py-1.5 text-right text-[11px] font-semibold leading-tight">
-          {orderingOpen
-            ? `Open · Closes ${new Date(session.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
-            : session
-              ? status.toLowerCase() === 'expired' ? 'Expired' : 'Ordering closed'
-              : sessionVerified
-                ? 'No Session'
-                : 'Checking...'}
-        </div>
-      </header>
-
-      <section
-        role={nearExpiration ? 'alert' : undefined}
-        className={`mx-4 mt-4 rounded-xl border p-3 text-sm ${
-          orderingOpen
-            ? nearExpiration
-              ? 'border-amber-300 bg-amber-50 text-amber-900'
-              : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-            : 'border-red-200 bg-red-50 text-red-800'
-        }`}
-      >
-        {orderingOpen ? (
-          <>
-              <p className="font-bold">{session.title}</p>
-              <p>Ordering closes at {new Date(session.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {formatDateTime(session.expires_at)}</p>
-            <p className="font-semibold">
-              {nearExpiration ? 'Hurry, ordering closes soon: ' : 'Time remaining: '}
-              {formatRemainingTime(session.expires_at, now)}
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="font-bold">Ordering is closed</p>
-            <p>
-              {session?.expires_at
-                ? `This ordering session is ${status.toLowerCase()}. It closed at ${formatDateTime(session.expires_at)}.`
-                : 'There is no currently open order session.'}
-            </p>
-            {(sessionError || !sessionVerified) && (
-              <p className="mt-1">{sessionError || 'Verifying session status with the server...'}</p>
-            )}
-            <button onClick={fetchSession} className="mt-2 font-semibold underline">
-              Refresh session status
-            </button>
-          </>
-        )}
-      </section>
+      <SessionHeader
+        session={session}
+        sessionVerified={sessionVerified}
+        sessionError={sessionError}
+        customerName={customerName}
+        onRefresh={refreshSessionStatus}
+      />
 
       {!initDataAvailable && (
         <p className="mx-4 mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
@@ -274,7 +341,7 @@ export default function MiniAppProductsPage() {
       {error && (
         <div role="alert" className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <p>{error}</p>
-          <button onClick={fetchMenu} className="mt-2 font-semibold underline">Retry menu</button>
+          <button onClick={() => fetchMenu(menuSignalRef.current, true)} className="mt-2 min-h-11 font-semibold underline">Retry menu</button>
         </div>
       )}
 
@@ -312,15 +379,25 @@ export default function MiniAppProductsPage() {
         />
       </div>
 
-      {!error && (
+      {(!error || products.length > 0) && (
         <div className="mx-auto grid max-w-3xl grid-cols-2 gap-3 p-4 sm:grid-cols-3 sm:gap-4">
-          {visibleProducts.map((product) => {
+          {loading && products.length === 0 ? (
+            [0, 1, 2, 3, 4, 5].map((item) => (
+              <div key={item} className="overflow-hidden rounded-2xl border border-stone-200 bg-white" aria-hidden="true">
+                <div className="aspect-[4/3] bg-stone-100" />
+                <div className="space-y-2 p-3">
+                  <div className="h-4 w-3/4 rounded bg-stone-100" />
+                  <div className="h-3 w-1/3 rounded bg-stone-100" />
+                </div>
+              </div>
+            ))
+          ) : visibleProducts.map((product, index) => {
             const unavailable = product.is_available === false;
             return (
               <article key={product.id} className={`flex flex-col justify-between overflow-hidden rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md ${unavailable ? 'border-stone-200 opacity-75' : 'border-stone-100'}`}>
                 <div>
                   <div className="relative">
-                    <ProductImage product={product} />
+                    <ProductImage key={product.image_url} product={product} eager={index < 2} />
                     {unavailable && (
                       <span className="absolute left-2 top-2 rounded-full bg-stone-900/80 px-2.5 py-1 text-[10px] font-semibold text-white">
                         Unavailable
@@ -337,10 +414,9 @@ export default function MiniAppProductsPage() {
                   </div>
                 </div>
                 <div className="p-3 pt-0">
-                  {cart.some((item) => String(item.id) === String(product.id)) && (
+                  {cartByProduct.has(String(product.id)) && (
                     <p className="mb-2 text-[11px] text-stone-500">
-                      In cart: {cart
-                        .filter((item) => String(item.id) === String(product.id))
+                      In cart: {cartByProduct.get(String(product.id))
                         .map((item) => `${item.sugar_percent}% × ${item.quantity}`)
                         .join(' · ')}
                     </p>
@@ -358,7 +434,11 @@ export default function MiniAppProductsPage() {
           })}
           {visibleProducts.length === 0 && !error && (
             <p className="col-span-full py-8 text-center text-sm text-stone-500">
-              {search ? 'No menu items match your search.' : 'No products are available in this category.'}
+              {loading
+                ? 'Loading drinks…'
+                : search
+                  ? 'No menu items match your search.'
+                  : 'No products are available in this category.'}
             </p>
           )}
         </div>

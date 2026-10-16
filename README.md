@@ -69,6 +69,12 @@ The API contract and response examples are documented in the backend repository'
 
 The Mini App menu consumes the backend's `is_available` product flag and sugar-option list. Quantity is capped at the API's 100-item limit for each product/sugar combination. The checkout confirmation uses the saved order's item snapshots and server-calculated `total_amount`; a later empty `/mini-app/my-order` refresh does not clear the checkout confirmation.
 
+## Frontend loading and performance
+
+Admin pages and secondary customer pages are loaded on demand so the Mini App does not download every route's code at launch. The Mini App shell and menu skeleton render while menu data loads; categories and products share an in-memory 15-second cache and concurrent requests. Obsolete menu requests are canceled when no active consumers remain, and session requests are canceled when the page unmounts. Telegram `initData`, session status, and order results are not cached by this menu helper. Product images reserve their card dimensions, load lazily except for the first two visible products, and use a lightweight placeholder. The one-second session countdown is isolated from menu filtering and cart calculations.
+
+Use `npm run build` to compare the entry and route chunks after frontend changes. Bundle sizes alone do not measure API latency or image-host performance; verify the live deployment with its configured Laravel CORS and product image URLs as well.
+
 ## Telegram Mini App and Render
 
 The official Telegram Web App SDK is loaded by `index.html` and initialized with `ready()` / `expand()`. `/menu` is a public React route for Mini App launches. `public/_redirects` provides the SPA fallback needed for direct navigation to `/menu` on a Render Static Site.
