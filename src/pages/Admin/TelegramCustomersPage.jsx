@@ -73,7 +73,12 @@ const getMessageFailure = (requestError) => {
   const detailLower = details.join(' ').toLowerCase();
 
   if (
-    ['BOT_BLOCKED', 'TELEGRAM_BOT_BLOCKED', 'PRIVATE_CHAT_BLOCKED'].includes(code) ||
+    [
+      'BOT_BLOCKED',
+      'BOT_BLOCKED_BY_CUSTOMER',
+      'TELEGRAM_BOT_BLOCKED',
+      'PRIVATE_CHAT_BLOCKED',
+    ].includes(code) ||
     /bot was blocked by the user|user blocked the bot/i.test(detailLower)
   ) {
     return {
@@ -84,11 +89,21 @@ const getMessageFailure = (requestError) => {
 
   if (
     code === 'PRIVATE_CHAT_NOT_STARTED' ||
-    /customer must open .*private chat and press start|private chat (?:has )?not started|chat not found|can.t initiate conversation/i.test(detailLower)
+    /customer must open .*private chat and press start|private chat (?:has )?not started|can.t initiate conversation/i.test(detailLower)
   ) {
     return {
       kind: 'not-started',
       message: 'This customer has not started a private chat with the bot yet. They can continue ordering in the Mini App, but must open the bot privately and press Start before receiving direct messages.',
+    };
+  }
+
+  if (
+    ['PRIVATE_CHAT_UNAVAILABLE', 'TELEGRAM_FORBIDDEN'].includes(code) ||
+    /chat not found/i.test(detailLower)
+  ) {
+    return {
+      kind: 'unavailable',
+      message: detail || 'Telegram could not use this private chat. Ask the customer to open the bot privately and press Start again.',
     };
   }
 
@@ -102,6 +117,27 @@ const getMessageFailure = (requestError) => {
     return {
       kind: 'rate-limit',
       message: `${detail || 'Telegram is rate limiting messages.'}${retryText}`,
+    };
+  }
+
+  if (response?.status === 401) {
+    return {
+      kind: 'auth',
+      message: 'Your Admin session has expired. Sign in again before sending this message.',
+    };
+  }
+
+  if (['TELEGRAM_NETWORK_ERROR'].includes(code)) {
+    return {
+      kind: 'network',
+      message: detail || 'Telegram could not be reached. The message was not confirmed as delivered; please retry later.',
+    };
+  }
+
+  if (code === 'TELEGRAM_NOT_CONFIGURED') {
+    return {
+      kind: 'api',
+      message: detail || 'Private Telegram messaging is temporarily unavailable because the bot is not configured.',
     };
   }
 
@@ -472,8 +508,9 @@ function MessageModal({ customer, onClose, onSuccess }) {
   const [statusError, setStatusError] = useState('');
   const sendingRef = useRef(false);
   const refreshingStatusRef = useRef(false);
+  const idempotencyRef = useRef(null);
 
-  const refreshPrivateChatStatus = async () => {
+  const refreshPrivateChatStatus = useCallback(async () => {
     if (refreshingStatusRef.current) return;
     refreshingStatusRef.current = true;
     setRefreshingStatus(true);
@@ -485,7 +522,10 @@ function MessageModal({ customer, onClose, onSuccess }) {
       if (!response.data?.customer || typeof response.data.customer !== 'object') {
         throw new Error('The API returned an invalid customer profile response.');
       }
-      setPrivateChatStatus(getPrivateChatStatus(response.data.customer));
+      const status = getPrivateChatStatus(response.data.customer);
+      const deliveryUnavailable = ['blocked', 'unavailable'].includes(error?.kind);
+      setPrivateChatStatus(deliveryUnavailable ? 'unavailable' : status);
+      if (!deliveryUnavailable && status !== 'unavailable') setError(null);
     } catch (requestError) {
       console.error('Failed to refresh Telegram private-chat status', requestError);
       setStatusError(getApiErrorMessage(requestError, 'Could not refresh private-chat status.'));
@@ -493,7 +533,15 @@ function MessageModal({ customer, onClose, onSuccess }) {
       refreshingStatusRef.current = false;
       setRefreshingStatus(false);
     }
-  };
+  }, [customer.id, error]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshPrivateChatStatus();
+    };
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => document.removeEventListener('visibilitychange', refreshWhenVisible);
+  }, [refreshPrivateChatStatus]);
 
   const sendMessage = async (event) => {
     event.preventDefault();
@@ -508,7 +556,29 @@ function MessageModal({ customer, onClose, onSuccess }) {
     setSending(true);
     setError(null);
     try {
-      const response = await api.post(`/admin/customers/${customer.id}/messages`, { message: trimmedMessage });
+      if (privateChatStatus !== 'enabled') {
+        throw new Error(
+          privateChatStatus === 'unknown'
+            ? 'Private messaging status is not available from the backend. Refresh the customer profile before sending.'
+            : 'This customer cannot currently receive private messages. Ask them to start the bot, then refresh their status.'
+        );
+      }
+
+      if (!idempotencyRef.current || idempotencyRef.current.message !== trimmedMessage) {
+        if (!window.crypto?.randomUUID) {
+          throw new Error('Secure message submission is unavailable in this browser. Reload the Admin page and try again.');
+        }
+        idempotencyRef.current = {
+          message: trimmedMessage,
+          key: window.crypto.randomUUID(),
+        };
+      }
+
+      const response = await api.post(
+        `/admin/customers/${customer.id}/messages`,
+        { message: trimmedMessage },
+        { headers: { 'Idempotency-Key': idempotencyRef.current.key } }
+      );
       if (response.data?.delivered !== true || response.data?.data?.status !== 'sent') {
         const failure = new Error(response.data?.error || response.data?.message || 'The backend did not confirm Telegram accepted the message.');
         failure.response = { data: response.data, status: response.status, headers: response.headers };
@@ -521,7 +591,7 @@ function MessageModal({ customer, onClose, onSuccess }) {
       console.error('Failed to send Telegram customer message', requestError);
       const failure = getMessageFailure(requestError);
       if (failure.kind === 'not-started') setPrivateChatStatus('not-started');
-      if (failure.kind === 'blocked') setPrivateChatStatus('unavailable');
+      if (failure.kind === 'blocked' || failure.kind === 'unavailable') setPrivateChatStatus('unavailable');
       setError(failure);
     } finally {
       sendingRef.current = false;
@@ -558,6 +628,38 @@ function MessageModal({ customer, onClose, onSuccess }) {
           {statusError && <p role="alert" className="mt-1 text-xs text-red-700">{statusError}</p>}
         </div>
 
+        {privateChatStatus !== 'enabled' && (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            {privateChatStatus === 'not-started' ? (
+              <>
+                <p>This customer must voluntarily open the bot privately and press <strong>Start</strong> before receiving direct messages. They can continue ordering in the Mini App without doing this.</p>
+                <a
+                  className="mt-2 inline-flex min-h-11 items-center rounded-lg border border-emerald-300 bg-white px-4 py-2 font-semibold text-emerald-800 underline"
+                  href="https://t.me/ahseven_bot?start=order_notifications"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open Bot Link
+                </a>
+              </>
+            ) : privateChatStatus === 'unavailable' ? (
+              <>
+                <p>Telegram reported that this bot chat is blocked or unavailable. Ask the customer to unblock the bot and press Start again.</p>
+                <a
+                  className="mt-2 inline-flex min-h-11 items-center rounded-lg border border-emerald-300 bg-white px-4 py-2 font-semibold text-emerald-800 underline"
+                  href="https://t.me/ahseven_bot?start=order_notifications"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open Bot Link
+                </a>
+              </>
+            ) : (
+              <p>Private messaging status is unavailable. Refresh the customer profile; sending stays disabled until the backend confirms activation.</p>
+            )}
+          </div>
+        )}
+
         <form onSubmit={sendMessage} className="mt-5 space-y-3">
           <label htmlFor="telegram-customer-message" className="block text-sm font-semibold text-gray-700">Message</label>
           <textarea
@@ -574,30 +676,18 @@ function MessageModal({ customer, onClose, onSuccess }) {
           {error && (
             <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
               <p>{error.message}</p>
-              {error.kind === 'not-started' && (
-                <p className="mt-2">
-                  The customer must voluntarily open the bot privately and press <strong>Start</strong>.
-                  They can continue ordering in the Mini App without doing this.
-                </p>
-              )}
               {error.kind === 'blocked' && (
                 <p className="mt-2">Ask the customer to unblock the bot and start it again. They can continue ordering in the Mini App.</p>
-              )}
-              {(error.kind === 'not-started' || error.kind === 'blocked') && (
-                <a
-                  className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-emerald-300 bg-white px-4 py-2 font-semibold text-emerald-800 underline"
-                  href="https://t.me/ahseven_bot?start=order_notifications"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open Bot Link
-                </a>
               )}
             </div>
           )}
           <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
             <button type="button" onClick={onClose} disabled={sending} className={secondaryButtonClass}>Cancel</button>
-            <button type="submit" disabled={sending || !message.trim()} className={primaryButtonClass}>
+            <button
+              type="submit"
+              disabled={sending || !message.trim() || privateChatStatus !== 'enabled'}
+              className={primaryButtonClass}
+            >
               {sending ? 'Sending…' : 'Send Message'}
             </button>
           </div>
@@ -850,13 +940,14 @@ export default function TelegramCustomersPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1050px] text-left">
+              <table className="w-full min-w-[1180px] text-left">
                 <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                   <tr>
                     <th scope="col" className="px-4 py-3 font-semibold">No.</th>
                     <th scope="col" className="px-4 py-3 font-semibold">Telegram profile</th>
                     <th scope="col" className="px-4 py-3 font-semibold">Username</th>
                     <th scope="col" className="px-4 py-3 font-semibold">Telegram ID</th>
+                    <th scope="col" className="px-4 py-3 font-semibold">Private messaging</th>
                     <th scope="col" className="px-4 py-3 text-right font-semibold">Orders</th>
                     <th scope="col" className="px-4 py-3 text-right font-semibold">Total spending</th>
                     <th scope="col" className="px-4 py-3 font-semibold">Latest order</th>
@@ -879,6 +970,9 @@ export default function TelegramCustomersPage() {
                           : 'No username'}
                       </td>
                       <td className="px-4 py-4 font-mono text-gray-700">{customer.telegram_user_id ?? '—'}</td>
+                      <td className="px-4 py-4">
+                        <PrivateChatStatus status={getPrivateChatStatus(customer)} />
+                      </td>
                       <td className="px-4 py-4 text-right text-gray-700">{customer.order_count ?? 0}</td>
                       <td className="px-4 py-4 text-right font-semibold text-emerald-700">{formatMoney(customer.total_spending)}</td>
                       <td className="px-4 py-4 text-gray-700">{formatDateTime(customer.latest_order_at, timeZone)}</td>

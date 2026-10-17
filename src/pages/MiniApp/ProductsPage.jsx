@@ -4,7 +4,7 @@ import api from '../../api/axios';
 import { getMenuData } from '../../api/menu';
 import { getApiErrorMessage } from '../../api/errors';
 import { formatRiel } from '../../utils/currency';
-import { getOrderSessionLaunch, getTelegramUser, getTelegramWebApp } from '../../utils/telegram';
+import { getOrderSessionLaunch, getTelegramWebApp } from '../../utils/telegram';
 import {
   formatDateTime,
   formatRemainingTime,
@@ -48,7 +48,7 @@ const ProductImage = React.memo(function ProductImage({ product, eager = false }
   );
 });
 
-const SessionHeader = React.memo(function SessionHeader({ session, sessionVerified, sessionError, customerName, onRefresh }) {
+const SessionHeader = React.memo(function SessionHeader({ session, sessionVerified, sessionError, onRefresh }) {
   const [now, setNow] = useState(INITIAL_NOW);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -69,7 +69,7 @@ const SessionHeader = React.memo(function SessionHeader({ session, sessionVerifi
         <div>
           <h1 className="text-base font-bold leading-tight">{session?.title || 'Cafe Menu'}</h1>
           <p className="mt-0.5 text-xs text-emerald-100">
-            {customerName ? `Welcome, ${customerName}` : 'Fresh from the cafe'}
+            Fresh from the cafe
           </p>
         </div>
         <div className="max-w-[45%] rounded-full bg-emerald-800 px-3 py-1.5 text-right text-[11px] font-semibold leading-tight">
@@ -140,7 +140,6 @@ export default function MiniAppProductsPage() {
   const [sugarProduct, setSugarProduct] = useState(null);
   const [sugarSelectionKey, setSugarSelectionKey] = useState(0);
   const [now, setNow] = useState(INITIAL_NOW);
-  const [customerName, setCustomerName] = useState('');
   const menuRequestRef = useRef(null);
   const sessionRequestRef = useRef(null);
   const sessionSignalRef = useRef(null);
@@ -232,8 +231,6 @@ export default function MiniAppProductsPage() {
     sessionSignalRef.current = controller.signal;
     menuSignalRef.current = controller.signal;
     const startup = window.setTimeout(() => {
-      const telegramUser = getTelegramUser();
-      setCustomerName([telegramUser?.first_name, telegramUser?.last_name].filter(Boolean).join(' '));
       fetchMenu(controller.signal);
       fetchSession(controller.signal);
     }, 0);
@@ -329,9 +326,25 @@ export default function MiniAppProductsPage() {
         session={session}
         sessionVerified={sessionVerified}
         sessionError={sessionError}
-        customerName={customerName}
         onRefresh={refreshSessionStatus}
       />
+
+      {initDataAvailable && (
+        <section aria-label="Private Telegram notifications" className="mx-4 mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-semibold">Private notifications: Unable to Check</p>
+          <p className="mt-1">
+            Your ordering is not affected. If you want private messages from the cafe, open the bot and voluntarily press <strong>Start</strong>. The Mini App cannot confirm whether this is already enabled.
+          </p>
+          <a
+            className="mt-2 inline-flex min-h-11 items-center rounded-lg border border-emerald-300 bg-white px-4 py-2 font-semibold text-emerald-800 underline"
+            href="https://t.me/ahseven_bot?start=order_notifications"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Enable Private Notifications
+          </a>
+        </section>
+      )}
 
       {!initDataAvailable && (
         <p className="mx-4 mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
