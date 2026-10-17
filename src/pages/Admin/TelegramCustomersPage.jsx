@@ -45,6 +45,107 @@ const getDisplayName = (customer) => {
     : 'Telegram customer';
 };
 
+const getPrivateChatStatus = (customer) => {
+  const status = String(customer?.private_chat_status || '').toLowerCase();
+  if (['blocked', 'bot_blocked', 'unavailable'].includes(status)) return 'unavailable';
+  if (customer?.private_chat_activated === true) return 'enabled';
+  if (customer?.private_chat_activated === false) return 'not-started';
+  if (['enabled', 'active', 'started'].includes(status)) return 'enabled';
+  if (['not_started', 'not-started'].includes(status)) return 'not-started';
+  return 'unknown';
+};
+
+const getMessageFailure = (requestError) => {
+  const response = requestError.response;
+  const body = response?.data || {};
+  const data = body.data && typeof body.data === 'object' ? body.data : {};
+  const code = [
+    body.error_code,
+    body.code,
+    body.error,
+    data.error_code,
+    data.code,
+    data.error,
+  ].find((value) => typeof value === 'string' && value.trim())?.toUpperCase() || '';
+  const details = [body.error, data.error, body.message, data.message]
+    .filter((value) => typeof value === 'string' && value.trim());
+  const detail = details[0] || '';
+  const detailLower = details.join(' ').toLowerCase();
+
+  if (
+    ['BOT_BLOCKED', 'TELEGRAM_BOT_BLOCKED', 'PRIVATE_CHAT_BLOCKED'].includes(code) ||
+    /bot was blocked by the user|user blocked the bot/i.test(detailLower)
+  ) {
+    return {
+      kind: 'blocked',
+      message: 'Telegram confirmed that this customer blocked the bot. Ask them to unblock the bot and press Start again before sending another message.',
+    };
+  }
+
+  if (
+    code === 'PRIVATE_CHAT_NOT_STARTED' ||
+    /customer must open .*private chat and press start|private chat (?:has )?not started|chat not found|can.t initiate conversation/i.test(detailLower)
+  ) {
+    return {
+      kind: 'not-started',
+      message: 'This customer has not started a private chat with the bot yet. They can continue ordering in the Mini App, but must open the bot privately and press Start before receiving direct messages.',
+    };
+  }
+
+  if (response?.status === 429) {
+    const retryAfter = response.headers?.['retry-after'];
+    const retryText = retryAfter && !/retry in \d+ seconds/i.test(detail)
+      ? ` Please retry in ${retryAfter} seconds.`
+      : detail
+        ? ''
+        : ' Please wait before retrying.';
+    return {
+      kind: 'rate-limit',
+      message: `${detail || 'Telegram is rate limiting messages.'}${retryText}`,
+    };
+  }
+
+  if (requestError.request || requestError.code === 'ERR_NETWORK') {
+    return {
+      kind: 'network',
+      message: getApiErrorMessage(requestError, 'Could not reach the messaging service. Check your connection and try again.'),
+    };
+  }
+
+  if (detail) return { kind: 'api', message: detail };
+  if (response?.status >= 500) {
+    return {
+      kind: 'api',
+      message: `The messaging service failed (HTTP ${response.status}). The message was not confirmed as delivered.`,
+    };
+  }
+
+  return {
+    kind: 'api',
+    message: getApiErrorMessage(requestError, 'The message was not confirmed as delivered. Please try again.'),
+  };
+};
+
+function PrivateChatStatus({ status }) {
+  const statusText = {
+    enabled: 'Private messaging enabled',
+    'not-started': 'Private chat not started',
+    unavailable: 'Bot blocked or unavailable',
+    unknown: 'Activation status not provided by the backend',
+  }[status];
+  const statusClass = status === 'enabled'
+    ? 'text-emerald-700'
+    : status === 'unknown'
+      ? 'text-gray-500'
+      : 'text-amber-800';
+
+  return (
+    <p className={`mt-2 text-xs font-semibold ${statusClass}`} role="status">
+      {statusText}
+    </p>
+  );
+}
+
 const normalizePage = (page) => ({
   currentPage: Number(page?.current_page) || 1,
   lastPage: Math.max(1, Number(page?.last_page) || 1),
@@ -204,6 +305,7 @@ function CustomerModal({ customer, onClose, timeZone, onMessageSent }) {
                   {profile.telegram_username ? `@${String(profile.telegram_username).replace(/^@/, '')}` : 'No username'}
                 </p>
                 <p className="mt-1 text-xs text-gray-500">Telegram ID: {profile.telegram_user_id ?? '—'}</p>
+                <PrivateChatStatus status={getPrivateChatStatus(profile)} />
               </div>
               <button type="button" onClick={() => onMessageSent({ type: 'open-message', customer: profile })} className={primaryButtonClass}>
                 Send Message
@@ -364,36 +466,68 @@ function CustomerModal({ customer, onClose, timeZone, onMessageSent }) {
 function MessageModal({ customer, onClose, onSuccess }) {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(null);
+  const [privateChatStatus, setPrivateChatStatus] = useState(() => getPrivateChatStatus(customer));
+  const [refreshingStatus, setRefreshingStatus] = useState(false);
+  const [statusError, setStatusError] = useState('');
+  const sendingRef = useRef(false);
+  const refreshingStatusRef = useRef(false);
+
+  const refreshPrivateChatStatus = async () => {
+    if (refreshingStatusRef.current) return;
+    refreshingStatusRef.current = true;
+    setRefreshingStatus(true);
+    setStatusError('');
+    try {
+      const response = await api.get(`/admin/customers/${customer.id}/orders`, {
+        params: { page: 1, per_page: 1 },
+      });
+      if (!response.data?.customer || typeof response.data.customer !== 'object') {
+        throw new Error('The API returned an invalid customer profile response.');
+      }
+      setPrivateChatStatus(getPrivateChatStatus(response.data.customer));
+    } catch (requestError) {
+      console.error('Failed to refresh Telegram private-chat status', requestError);
+      setStatusError(getApiErrorMessage(requestError, 'Could not refresh private-chat status.'));
+    } finally {
+      refreshingStatusRef.current = false;
+      setRefreshingStatus(false);
+    }
+  };
 
   const sendMessage = async (event) => {
     event.preventDefault();
+    if (sendingRef.current) return;
     const trimmedMessage = message.trim();
     if (!trimmedMessage) {
-      setError('Enter a message before sending.');
+      setError({ kind: 'validation', message: 'Enter a message before sending.' });
       return;
     }
 
+    sendingRef.current = true;
     setSending(true);
-    setError('');
+    setError(null);
     try {
       const response = await api.post(`/admin/customers/${customer.id}/messages`, { message: trimmedMessage });
       if (response.data?.delivered !== true || response.data?.data?.status !== 'sent') {
-        throw new Error(response.data?.error || response.data?.message || 'The backend did not confirm Telegram accepted the message.');
+        const failure = new Error(response.data?.error || response.data?.message || 'The backend did not confirm Telegram accepted the message.');
+        failure.response = { data: response.data, status: response.status, headers: response.headers };
+        throw failure;
       }
+      setPrivateChatStatus('enabled');
       onSuccess(`Message sent to ${getDisplayName(customer)}.`);
       onClose();
     } catch (requestError) {
       console.error('Failed to send Telegram customer message', requestError);
-      const backendError = requestError.response?.data?.error;
-      const apiMessage = backendError || getApiErrorMessage(requestError, 'Failed to send the Telegram message.');
-      setError(apiMessage);
+      const failure = getMessageFailure(requestError);
+      if (failure.kind === 'not-started') setPrivateChatStatus('not-started');
+      if (failure.kind === 'blocked') setPrivateChatStatus('unavailable');
+      setError(failure);
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };
-
-  const privateChatError = /private chat|press start|unblock/i.test(error);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/50 p-3 sm:p-6" role="presentation">
@@ -412,6 +546,16 @@ function MessageModal({ customer, onClose, onSuccess }) {
             {customer.telegram_username ? `@${String(customer.telegram_username).replace(/^@/, '')}` : 'No username'}
           </p>
           <p className="mt-1 text-xs text-gray-500">Telegram ID: {customer.telegram_user_id ?? '—'}</p>
+          <PrivateChatStatus status={privateChatStatus} />
+          <button
+            type="button"
+            onClick={refreshPrivateChatStatus}
+            disabled={refreshingStatus || sending}
+            className="mt-2 text-xs font-semibold text-emerald-800 underline disabled:opacity-60"
+          >
+            {refreshingStatus ? 'Refreshing status…' : 'Refresh activation status'}
+          </button>
+          {statusError && <p role="alert" className="mt-1 text-xs text-red-700">{statusError}</p>}
         </div>
 
         <form onSubmit={sendMessage} className="mt-5 space-y-3">
@@ -429,15 +573,25 @@ function MessageModal({ customer, onClose, onSuccess }) {
           <p className="text-right text-xs text-gray-500">{message.length}/{MESSAGE_LIMIT}</p>
           {error && (
             <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-              <p>{error}</p>
-              {privateChatError && (
+              <p>{error.message}</p>
+              {error.kind === 'not-started' && (
                 <p className="mt-2">
-                  Ask the customer to open{' '}
-                  <a className="font-semibold underline" href="https://t.me/ahseven_bot" target="_blank" rel="noreferrer">
-                    https://t.me/ahseven_bot
-                  </a>{' '}
-                  and press <strong>Start</strong> (and unblock the bot if needed), then try again.
+                  The customer must voluntarily open the bot privately and press <strong>Start</strong>.
+                  They can continue ordering in the Mini App without doing this.
                 </p>
+              )}
+              {error.kind === 'blocked' && (
+                <p className="mt-2">Ask the customer to unblock the bot and start it again. They can continue ordering in the Mini App.</p>
+              )}
+              {(error.kind === 'not-started' || error.kind === 'blocked') && (
+                <a
+                  className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-emerald-300 bg-white px-4 py-2 font-semibold text-emerald-800 underline"
+                  href="https://t.me/ahseven_bot?start=order_notifications"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open Bot Link
+                </a>
               )}
             </div>
           )}
@@ -551,6 +705,11 @@ export default function TelegramCustomersPage() {
     setToast(message);
     window.setTimeout(() => setToast(''), 5000);
   }, []);
+
+  const handleMessageSuccess = useCallback((message) => {
+    showToast(message);
+    setRefreshKey((current) => current + 1);
+  }, [showToast]);
 
   const applyDateFilter = (event) => {
     event.preventDefault();
@@ -763,7 +922,7 @@ export default function TelegramCustomersPage() {
         <MessageModal
           customer={messageCustomer}
           onClose={() => setMessageCustomer(null)}
-          onSuccess={showToast}
+          onSuccess={handleMessageSuccess}
         />
       )}
       {deactivateCustomer && (
