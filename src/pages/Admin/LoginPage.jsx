@@ -24,8 +24,15 @@ export default function LoginPage() {
       if (typeof response.data?.token !== 'string' || !response.data.token) {
         throw new Error('The server did not return an authentication token.');
       }
+      
       localStorage.setItem('admin_token', response.data.token);
       localStorage.removeItem('token');
+      
+      // 👈 SAVE THE USER OBJECT HERE SO THE SIDEBAR KNOWS THE ROLE:
+      if (response.data.user) {
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+      }
+
       window.location.href = '/admin/dashboard';
     } catch (err) {
       setError(getApiErrorMessage(err, 'Invalid login credentials.'));
