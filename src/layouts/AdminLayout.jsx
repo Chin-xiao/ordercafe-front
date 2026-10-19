@@ -5,10 +5,15 @@ import { Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
 export default function AdminLayout() {
   const navigate = useNavigate();
   const hasToken = Boolean(localStorage.getItem('admin_token') || localStorage.getItem('token'));
+  
+  // Get the logged-in user details to check their role
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const isSuperAdmin = user.role === 'superadmin';
 
   const handleLogout = () => {
     localStorage.removeItem('admin_token');
     localStorage.removeItem('token');
+    localStorage.removeItem('user');
     navigate('/');
   };
 
@@ -30,7 +35,8 @@ export default function AdminLayout() {
             ['/admin/reports', '📈 Sales Reports'],
             ['/admin/telegram-settings', '🤖 Telegram Bot'],
             ['/admin/telegram-customers', '👥 Telegram Customers'],
-            ['/admin/users', '👥 Staff & Users'], 
+            // ONLY include 'Staff & Users' if the user is a superadmin
+            ...(isSuperAdmin ? [['/admin/users', '👥 Staff & Users']] : []),
           ].map(([to, label]) => (
             <NavLink
               key={to}
@@ -61,7 +67,7 @@ export default function AdminLayout() {
           <h2 className="text-base font-semibold text-gray-800 md:text-lg">Control Panel</h2>
           <div className="flex items-center gap-2">
           <span className="hidden text-sm bg-stone-100 text-stone-700 px-3 py-1 rounded-full font-medium sm:inline-flex">
-            Administrator
+            {isSuperAdmin ? 'SuperAdmin' : 'Controller'}
           </span>
           <button
             onClick={handleLogout}
