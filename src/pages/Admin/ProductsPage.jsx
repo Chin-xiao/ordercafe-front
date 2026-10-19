@@ -15,6 +15,7 @@ export default function ProductsPage() {
   const [categoryId, setCategoryId] = useState('');
   const [price, setPrice] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [requiresSugar, setRequiresSugar] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -53,6 +54,7 @@ export default function ProductsPage() {
     setCategoryId('');
     setPrice('');
     setImageUrl('');
+    setRequiresSugar(false);
     setError('');
     setShowModal(true);
   };
@@ -63,6 +65,7 @@ export default function ProductsPage() {
     setCategoryId(product.category_id || product.category?.id || '');
     setPrice(product.price || '');
     setImageUrl(product.image_url || '');
+    setRequiresSugar(product.requires_sugar ?? false);
     setError('');
     setShowModal(true);
   };
@@ -78,6 +81,7 @@ export default function ProductsPage() {
         category_id: categoryId,
         price,
         image_url: imageUrl,
+        requires_sugar: requiresSugar,
       };
 
       if (editingProduct) {
@@ -144,6 +148,7 @@ export default function ProductsPage() {
               <th className="p-4">Product Name</th>
               <th className="p-4">Category</th>
               <th className="p-4">Price</th>
+              <th className="p-4">Sugar Option</th>
               <th className="p-4">Status</th>
               <th className="p-4 text-right">Actions</th>
             </tr>
@@ -161,6 +166,11 @@ export default function ProductsPage() {
                 <td className="p-4 font-semibold text-gray-800">{product.name}</td>
                 <td className="p-4 text-gray-600">{product.category?.name || 'Uncategorized'}</td>
                 <td className="p-4 font-medium text-emerald-600">${Number(product.price).toFixed(2)}</td>
+                <td className="p-4">
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${product.requires_sugar ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'}`}>
+                    {product.requires_sugar ? 'Required' : 'None'}
+                  </span>
+                </td>
                 <td className="p-4">
                   <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${product.is_available ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
                     {product.is_available ? 'Available' : 'Unavailable'}
@@ -190,7 +200,7 @@ export default function ProductsPage() {
             ))}
             {!loadError && products.length === 0 && (
               <tr>
-                <td colSpan="6" className="p-8 text-center text-gray-500">No products found. Add your first item!</td>
+                <td colSpan="7" className="p-8 text-center text-gray-500">No products found. Add your first item!</td>
               </tr>
             )}
           </tbody>
@@ -260,6 +270,19 @@ export default function ProductsPage() {
                   placeholder="https://example.com/image.jpg"
                   className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
                 />
+              </div>
+
+              <div className="flex items-center space-x-2 pt-2">
+                <input
+                  type="checkbox"
+                  id="requiresSugar"
+                  checked={requiresSugar}
+                  onChange={(e) => setRequiresSugar(e.target.checked)}
+                  className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
+                />
+                <label htmlFor="requiresSugar" className="text-xs font-semibold text-gray-700 cursor-pointer">
+                  Requires Sugar Selection (e.g. for coffees & teas)
+                </label>
               </div>
 
               <div className="flex justify-end space-x-3 pt-3">

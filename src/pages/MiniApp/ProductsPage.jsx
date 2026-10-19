@@ -267,13 +267,18 @@ export default function MiniAppProductsPage() {
     return () => window.clearTimeout(timeout);
   }, [session?.expires_at, sessionVerified]);
 
-  const handleChooseSugar = (product) => {
-    setSugarSelectionKey((value) => value + 1);
-    setSugarProduct(product);
+  const handleProductClick = (product) => {
+    if (product.requires_sugar) {
+      setSugarSelectionKey((value) => value + 1);
+      setSugarProduct(product);
+    } else {
+      // Directly add to cart with null/no sugar and quantity 1
+      handleAddToCart(product, null, 1);
+    }
   };
 
   const handleAddToCart = (product, sugarPercent, quantity) => {
-    const cartId = `${product.id}:${sugarPercent}`;
+    const cartId = `${product.id}:${sugarPercent ?? 'nosugar'}`;
     const existing = cart.find((item) => item.cart_id === cartId);
     if (existing && existing.quantity + quantity > 100) return false;
 
@@ -430,16 +435,16 @@ export default function MiniAppProductsPage() {
                   {cartByProduct.has(String(product.id)) && (
                     <p className="mb-2 text-[11px] text-stone-500">
                       In cart: {cartByProduct.get(String(product.id))
-                        .map((item) => `${item.sugar_percent}% × ${item.quantity}`)
+                        .map((item) => item.sugar_percent !== null ? `${item.sugar_percent}% × ${item.quantity}` : `${item.quantity}`)
                         .join(' · ')}
                     </p>
                   )}
                   <button
-                    onClick={() => handleChooseSugar(product)}
+                    onClick={() => handleProductClick(product)}
                     disabled={!orderingOpen || unavailable}
                     className="w-full min-h-11 rounded-xl bg-emerald-700 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-stone-300"
                   >
-                    {unavailable ? 'Unavailable' : '+ Choose Sugar & Add'}
+                    {unavailable ? 'Unavailable' : product.requires_sugar ? '+ Choose Sugar & Add' : '+ Add to Order'}
                   </button>
                 </div>
               </article>
