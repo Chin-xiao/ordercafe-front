@@ -57,11 +57,12 @@ export default function CartCheckoutModal({
       if (cart.length === 0) {
         throw new Error('Your cart is empty.');
       }
-      if (cart.some((item) => !Number.isInteger(item.sugar_percent))) {
+      // Only require sugar percentage if the product has requires_sugar set to true
+      if (cart.some((item) => item.requires_sugar && !Number.isInteger(item.sugar_percent))) {
         throw new Error('Choose a sugar percentage for every drink before submitting.');
       }
       if (cart.some((item) => item.quantity > 100)) {
-        throw new Error('Each drink and sugar combination is limited to 100 items per order.');
+        throw new Error('Each item and option combination is limited to 100 items per order.');
       }
 
       const sessionResponse = await api.get('/mini-app/order-session/current');
@@ -81,7 +82,7 @@ export default function CartCheckoutModal({
         items: cart.map((item) => ({
           product_id: item.id,
           quantity: item.quantity,
-          sugar_percent: item.sugar_percent,
+          sugar_percent: item.requires_sugar ? item.sugar_percent : null,
         })),
       });
 
@@ -141,7 +142,9 @@ export default function CartCheckoutModal({
             <div key={item.cart_id} className="pt-3 flex justify-between items-center gap-3">
               <div className="min-w-0">
                 <h3 className="font-semibold text-sm text-gray-800">{item.name}</h3>
-                <p className="text-xs text-gray-500">{item.sugar_percent}% sugar · {item.quantity} × {formatRiel(item.price)}</p>
+                <p className="text-xs text-gray-500">
+                  {item.requires_sugar ? `${item.sugar_percent}% sugar` : 'Standard'} · {item.quantity} × {formatRiel(item.price)}
+                </p>
                 <button
                   onClick={() => handleRemoveItem(item.cart_id)}
                   disabled={loading}
