@@ -13,6 +13,7 @@ const LoginPage = lazy(() => import('./pages/Admin/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/Admin/RegisterPage'));
 const MyOrderPage = lazy(() => import('./pages/MiniApp/MyOrderPage'));
 const MiniAppProductsPage = lazy(() => import('./pages/MiniApp/ProductsPage'));
+const UsersPage = lazy(() => import('./pages/Admin/UsersPage'));
 
 function RouteLoading() {
   const { pathname } = useLocation();
@@ -83,9 +84,12 @@ function App() {
             <Route path="reports" element={<ReportsPage />} />
             <Route path="telegram-settings" element={<TelegramSettingsPage />} />
             <Route path="telegram-customers" element={<TelegramCustomersPage />} />
+            
           </Route>
+          <Route path="/admin/users" element={<UsersPage />} />
 
           {/* Explicit Customer Menu Fallback Route */}
+          
           <Route path="/menu" element={<MiniAppProductsPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/my-order" element={<MyOrderPage />} />
