@@ -8,9 +8,6 @@ export default function TelegramSettingsPage() {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
 
-  // Bulletproof frontend fallback random token if backend hasn't populated it yet
-  const [randomFallback] = useState(() => 'CAFE_' + Math.random().toString(36).substring(2, 10).toUpperCase());
-
   const fetchSettings = async () => {
     try {
       setLoading(true);
@@ -33,7 +30,7 @@ export default function TelegramSettingsPage() {
   }, []);
 
   const handleRegenerate = async () => {
-    if (!window.confirm('Are you sure you want to generate a new token? This will disconnect any currently linked group.')) return;
+    if (!window.confirm('Generate a new setup token? Existing linked groups will remain connected.')) return;
     try {
       setActionLoading(true);
       const res = await api.post('/admin/telegram-settings/regenerate');
@@ -56,9 +53,7 @@ export default function TelegramSettingsPage() {
     return <div className="p-6 text-gray-500 text-center">Loading Telegram settings...</div>;
   }
 
-  // Resolve token and command cleanly with guaranteed fallback
-  const currentToken = setting?.verify_token || randomFallback;
-  const setupCommand = setting?.setup_command || `/setup ${currentToken}`;
+  const setupCommand = setting?.setup_command;
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
@@ -103,39 +98,47 @@ export default function TelegramSettingsPage() {
 
       {/* Verification Instructions Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-4">
-        <h3 className="text-sm font-bold text-gray-800">🔗 How to Link Your Group</h3>
-        <ol className="list-decimal list-inside text-xs text-gray-600 space-y-2">
-          <li>Add your Telegram bot to your group chat and make it an <strong className="text-gray-800">Administrator</strong>.</li>
-          <li>Click <strong className="text-gray-800">Copy Command</strong> to grab your unique setup key.</li>
-          <li>Paste and send the command directly inside your Telegram group chat.</li>
-        </ol>
+        {setupCommand ? (
+          <>
+            <h3 className="text-sm font-bold text-gray-800">🔗 How to Link Your Group</h3>
+            <ol className="list-decimal list-inside text-xs text-gray-600 space-y-2">
+              <li>Add your Telegram bot to your group chat and make it an <strong className="text-gray-800">Administrator</strong>.</li>
+              <li>Click <strong className="text-gray-800">Copy Command</strong> to grab your unique setup key.</li>
+              <li>Paste and send the command directly inside your Telegram group chat.</li>
+            </ol>
 
-        <div className="pt-2">
-          <label className="block text-xs font-semibold text-gray-500 mb-1">Your Setup Command</label>
-          <div className="flex items-center gap-2">
-            <input 
-              type="text" 
-              readOnly 
-              value={setupCommand}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 font-mono text-sm text-gray-800 outline-none"
-            />
-            <button 
-              onClick={() => copyToClipboard(setupCommand)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-5 py-2.5 rounded-xl text-xs shadow transition whitespace-nowrap"
-            >
-              {copied ? 'Copied! ✓' : 'Copy Command'}
-            </button>
-          </div>
-        </div>
+            <div className="pt-2">
+              <label className="block text-xs font-semibold text-gray-500 mb-1">
+                {setting?.is_verified ? 'Setup Command for Another Group' : 'Your Setup Command'}
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={setupCommand}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 font-mono text-sm text-gray-800 outline-none"
+                />
+                <button
+                  onClick={() => copyToClipboard(setupCommand)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-5 py-2.5 rounded-xl text-xs shadow transition whitespace-nowrap"
+                >
+                  {copied ? 'Copied! ✓' : 'Copy Command'}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="text-xs text-gray-500">Your group is linked. Generate a setup token only if you want to connect another group.</p>
+        )}
 
         <div className="pt-4 border-t border-gray-100 flex justify-between items-center">
-          <p className="text-xs text-gray-400">Need a fresh token? This will reset the current connection.</p>
+          <p className="text-xs text-gray-400">Need to link another group? Generate an additional setup token.</p>
           <button 
             disabled={actionLoading}
             onClick={handleRegenerate}
             className="border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold px-4 py-2 rounded-xl transition disabled:opacity-50"
           >
-            {actionLoading ? 'Regenerating...' : 'Regenerate Token'}
+            {actionLoading ? 'Generating...' : setupCommand ? 'Generate Another Token' : 'Generate Setup Token'}
           </button>
         </div>
       </div>

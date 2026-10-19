@@ -57,6 +57,16 @@ export default function ProductsPage() {
     setShowModal(true);
   };
 
+  const handleOpenEditModal = (product) => {
+    setEditingProduct(product);
+    setName(product.name || '');
+    setCategoryId(product.category_id || product.category?.id || '');
+    setPrice(product.price || '');
+    setImageUrl(product.image_url || '');
+    setError('');
+    setShowModal(true);
+  };
+
   const handleSaveProduct = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -157,6 +167,12 @@ export default function ProductsPage() {
                   </span>
                 </td>
                 <td className="p-4 text-right space-x-3">
+                  <button 
+                    onClick={() => handleOpenEditModal(product)}
+                    className="text-emerald-600 hover:underline text-xs font-medium"
+                  >
+                    Edit
+                  </button>
                   <button 
                     onClick={() => toggleAvailability(product.id)}
                     className="text-blue-600 hover:underline text-xs font-medium"
