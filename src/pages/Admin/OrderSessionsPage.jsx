@@ -51,6 +51,7 @@ const formatBackendResponse = (data) => JSON.stringify(data, (key, value) => (
 ), 2);
 
 const INITIAL_NOW = Date.now();
+const MESSAGE_LIMIT = 4096;
 
 export default function OrderSessionsPage() {
   const [sessions, setSessions] = useState([]);
@@ -61,6 +62,10 @@ export default function OrderSessionsPage() {
   const [actionId, setActionId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [messageSession, setMessageSession] = useState(null);
+  const [groupMessage, setGroupMessage] = useState('');
+  const [groupMessageError, setGroupMessageError] = useState('');
+  const [sendingGroupMessage, setSendingGroupMessage] = useState(false);
   const [finalReport, setFinalReport] = useState('');
   const [now, setNow] = useState(INITIAL_NOW);
   const [title, setTitle] = useState('');
@@ -234,6 +239,55 @@ export default function OrderSessionsPage() {
     }
   };
 
+  const handleSendGroupMessage = async (event) => {
+    event.preventDefault();
+    if (!messageSession || sendingGroupMessage) return;
+
+    const trimmedMessage = groupMessage.trim();
+    if (!trimmedMessage) {
+      setGroupMessageError('Enter a message before sending.');
+      return;
+    }
+
+    setSendingGroupMessage(true);
+    setGroupMessageError('');
+    try {
+      const response = await api.post(
+        `/admin/order-sessions/${messageSession.id}/messages`,
+        { message: trimmedMessage }
+      );
+      const notifications = response.data?.telegram_notifications;
+      if (
+        response.data?.delivered !== true
+        || !Array.isArray(notifications)
+        || notifications.length === 0
+        || notifications.some((notification) => notification.status !== 'sent')
+      ) {
+        throw new Error(
+          response.data?.error
+          || response.data?.message
+          || 'The backend did not confirm that Telegram delivered the message.'
+        );
+      }
+
+      setFeedback({
+        type: 'success',
+        sessionMessage: `Message sent to the Telegram group for "${messageSession.title}".`,
+      });
+      setGroupMessage('');
+      setMessageSession(null);
+    } catch (err) {
+      console.error('Failed to send Telegram group message', err);
+      setGroupMessageError(
+        err.response?.data?.error
+        || err.response?.data?.message
+        || getApiErrorMessage(err, 'The message was not confirmed as delivered.')
+      );
+    } finally {
+      setSendingGroupMessage(false);
+    }
+  };
+
   const getStatusBadge = (status) => {
     switch (status) {
       case 'OPEN':
@@ -352,6 +406,71 @@ export default function OrderSessionsPage() {
         </div>
       )}
 
+      {messageSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="session-message-title"
+            className="my-4 w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl"
+          >
+            <div className="mb-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Telegram group</p>
+              <h2 id="session-message-title" className="mt-1 text-lg font-bold text-gray-900">
+                Message group — {messageSession.title}
+              </h2>
+              <p className="mt-1 text-sm text-gray-500">
+                This message will be sent directly to the configured Telegram group.
+              </p>
+            </div>
+            {groupMessageError && (
+              <p role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {groupMessageError}
+              </p>
+            )}
+            <form onSubmit={handleSendGroupMessage}>
+              <label htmlFor="session-group-message" className="mb-1 block text-sm font-semibold text-gray-700">
+                Message
+              </label>
+              <textarea
+                id="session-group-message"
+                required
+                maxLength={MESSAGE_LIMIT}
+                rows={5}
+                value={groupMessage}
+                onChange={(event) => setGroupMessage(event.target.value)}
+                placeholder="Write your message..."
+                className="w-full resize-y rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <p className="mt-1 text-right text-xs text-gray-500">
+                {groupMessage.length}/{MESSAGE_LIMIT}
+              </p>
+              <div className="mt-4 flex justify-end gap-3">
+                <button
+                  type="button"
+                  disabled={sendingGroupMessage}
+                  onClick={() => {
+                    setMessageSession(null);
+                    setGroupMessage('');
+                    setGroupMessageError('');
+                  }}
+                  className="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={sendingGroupMessage || !groupMessage.trim()}
+                  className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {sendingGroupMessage ? 'Sending...' : 'Send Message'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
       <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5" aria-label="Session overview">
         {[
           ['Loaded sessions', sessions.length],
@@ -385,7 +504,21 @@ export default function OrderSessionsPage() {
                 const status = getSessionStatus(session, now);
                 return (
                   <tr key={session.id} className="hover:bg-gray-50">
-                    <td className="p-4 font-semibold text-gray-800">{session.title}</td>
+                    <td className="p-4 font-semibold text-gray-800">
+                      <div>{session.title}</div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGroupMessage('');
+                          setGroupMessageError('');
+                          setMessageSession(session);
+                        }}
+                        disabled={actionId !== null || sendingGroupMessage}
+                        className="mt-2 rounded-lg bg-sky-700 px-3 py-1.5 text-xs font-semibold text-white shadow transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Message Group
+                      </button>
+                    </td>
                     <td className="p-4 font-mono text-gray-600">{session.order_number || '—'}</td>
                     <td className="p-4">{getStatusBadge(status)}</td>
                     <td className="p-4 text-gray-600">
