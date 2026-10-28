@@ -85,7 +85,7 @@ export default function UsersPage() {
     event.target.value = '';
     if (!file) return;
 
-    // 1. Client-side extension validation
+    // 1. File validation
     const extension = file.name.split('.').pop()?.toLowerCase();
     const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp'];
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
@@ -101,7 +101,6 @@ export default function UsersPage() {
       return;
     }
 
-    // 2. Client-side 5MB size limit validation
     if (file.size > 5 * 1024 * 1024) {
       setQrUploadErrors((previous) => ({
         ...previous,
@@ -110,22 +109,37 @@ export default function UsersPage() {
       return;
     }
 
-    // 3. Build multipart/form-data with key 'image'
-    const formData = new FormData();
-    formData.append('image', file);
-
     setQrUploadErrors((previous) => ({ ...previous, [userId]: '' }));
     setUploadingQr((previous) => ({ ...previous, [userId]: true }));
 
     try {
-      // Send directly to Laravel backend
-      await api.post(`/admin/users/${userId}/payment-qr`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+      // 2. Upload directly to Cloudinary via unsigned preset
+      const cloudinaryFormData = new FormData();
+      cloudinaryFormData.append('file', file);
+      cloudinaryFormData.append('upload_preset', 'qr_uploads');
+
+      const cloudinaryResponse = await fetch(
+        'https://api.cloudinary.com/v1_1/djxniv0op/image/upload',
+        {
+          method: 'POST',
+          body: cloudinaryFormData,
+        }
+      );
+
+      const cloudinaryData = await cloudinaryResponse.json();
+
+      if (!cloudinaryResponse.ok) {
+        throw new Error(cloudinaryData?.error?.message || 'Failed to upload to Cloudinary');
+      }
+
+      const secureUrl = cloudinaryData.secure_url;
+
+      // 3. Save the resulting public HTTPS URL in your Laravel database
+      await api.post(`/admin/users/${userId}/payment-qr`, {
+        payment_qr_url: secureUrl,
       });
 
-      // Refresh list after successful upload
+      // 4. Refresh users list
       await fetchUsers();
     } catch (err) {
       setQrUploadErrors((previous) => ({
