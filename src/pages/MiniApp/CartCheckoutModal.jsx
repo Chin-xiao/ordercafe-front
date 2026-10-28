@@ -88,7 +88,7 @@ export default function CartCheckoutModal({
 
       const savedOrder = unwrapApiData(response);
       setCart([]);
-      onOrderSuccess(savedOrder);
+      onOrderSuccess(savedOrder, response.data?.payment_qr_image_url ?? null);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to submit the order. Please try again.'));
     } finally {

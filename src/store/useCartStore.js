@@ -95,7 +95,10 @@ export const useCartStore = create(
 
           const response = await api.post('/mini-app/orders', payload);
           set({ items: [], loading: false }); // Clear cart on success
-          return response.data.data;
+          return {
+            order: response.data?.data,
+            payment_qr_image_url: response.data?.payment_qr_image_url ?? null,
+          };
         } catch (err) {
           const errorMessage = err.response?.data?.message || err.response?.data?.errors?.items?.[0] || err.message || 'Failed to submit order.';
           set({ error: errorMessage, loading: false });

@@ -486,7 +486,9 @@ export default function MiniAppProductsPage() {
         requestedSessionId={launch.sessionId}
         orderingOpen={orderingOpen}
         initDataAvailable={initDataAvailable}
-        onOrderSuccess={(order) => navigate('/my-order', { state: { order } })}
+        onOrderSuccess={(order, paymentQrImageUrl) => navigate('/my-order', {
+          state: { order, payment_qr_image_url: paymentQrImageUrl },
+        })}
       />
       <SugarSelectionModal
         key={sugarSelectionKey}

@@ -1,15 +1,22 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import api from '../../api/axios';
 import { getApiErrorMessage } from '../../api/errors';
 import { formatRiel } from '../../utils/currency';
+import { closeTelegramApp } from '../../utils/telegram';
 
 export default function MyOrderPage() {
   const location = useLocation();
   const initialOrder = location.state?.order;
   const [order, setOrder] = useState(initialOrder || null);
+  const [paymentQrImageUrl, setPaymentQrImageUrl] = useState(
+    location.state?.payment_qr_image_url ?? null
+  );
+  const [failedQrImageUrl, setFailedQrImageUrl] = useState('');
+  const [thankYouMessage, setThankYouMessage] = useState('');
   const [loading, setLoading] = useState(!initialOrder);
   const [error, setError] = useState('');
+  const closeTimer = useRef(null);
 
   const fetchMyOrder = useCallback(async () => {
     try {
@@ -19,6 +26,7 @@ export default function MyOrderPage() {
       const refreshedOrder = response.data?.data
         || (response.data?.id ? response.data : null);
       if (refreshedOrder) setOrder(refreshedOrder);
+      setPaymentQrImageUrl(response.data?.payment_qr_image_url ?? null);
     } catch (err) {
       setError(getApiErrorMessage(err, 'No active order found for this session.'));
     } finally {
@@ -27,15 +35,22 @@ export default function MyOrderPage() {
   }, []);
 
   useEffect(() => {
-    const initialFetch = initialOrder
-      ? null
-      : window.setTimeout(() => { fetchMyOrder(); }, 0);
+    const initialFetch = window.setTimeout(fetchMyOrder, 0);
     const interval = setInterval(fetchMyOrder, 10000);
     return () => {
-      if (initialFetch !== null) window.clearTimeout(initialFetch);
+      window.clearTimeout(initialFetch);
       clearInterval(interval);
     };
   }, [fetchMyOrder, initialOrder]);
+
+  useEffect(() => () => {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+  }, []);
+
+  const handleDonePaid = () => {
+    setThankYouMessage('Thanks for letting us know. Payment has not been verified by the app.');
+    closeTimer.current = window.setTimeout(closeTelegramApp, 1500);
+  };
 
   const getStatusBadge = (status) => {
     switch (status?.toLowerCase()) {
@@ -137,8 +152,46 @@ export default function MyOrderPage() {
 
           {/* Total Price Bar */}
           <div className="border-t border-gray-100 pt-3 flex justify-between items-center text-base font-bold text-gray-800">
-            <span>Total Paid:</span>
+            <span>Total:</span>
             <span className="text-emerald-600 text-lg">{formatRiel(order?.total_amount ?? order?.total_price)}</span>
+          </div>
+
+          <div className="space-y-3 border-t border-gray-100 pt-4 text-center">
+            <h3 className="text-sm font-bold text-gray-800">Payment</h3>
+            {paymentQrImageUrl && failedQrImageUrl !== paymentQrImageUrl ? (
+              <img
+                src={paymentQrImageUrl}
+                alt="Cafe payment QR code"
+                onError={() => setFailedQrImageUrl(paymentQrImageUrl)}
+                className="mx-auto max-h-72 w-full max-w-72 rounded-xl border border-gray-200 object-contain"
+              />
+            ) : (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                {paymentQrImageUrl
+                  ? 'The payment QR image could not be loaded. Please contact cafe staff for payment instructions.'
+                  : 'No payment QR is configured for this order. Please contact cafe staff for payment instructions.'}
+              </p>
+            )}
+            {thankYouMessage && (
+              <p role="status" className="text-xs text-emerald-700">{thankYouMessage}</p>
+            )}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={closeTelegramApp}
+                className="flex-1 rounded-xl bg-gray-100 px-4 py-2.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-200"
+              >
+                Later paid
+              </button>
+              <button
+                type="button"
+                onClick={handleDonePaid}
+                disabled={Boolean(thankYouMessage)}
+                className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+              >
+                Done paid
+              </button>
+            </div>
           </div>
 
           <button

@@ -13,8 +13,8 @@ export default function CartPage() {
     try {
       setSubmitting(true);
       setErrorMsg('');
-      await submitOrder();
-      navigate('/my-order'); // Redirect to order confirmation/success view
+      const { order, payment_qr_image_url: paymentQrImageUrl } = await submitOrder();
+      navigate('/my-order', { state: { order, payment_qr_image_url: paymentQrImageUrl } });
     } catch (err) {
       setErrorMsg(err.message);
     } finally {

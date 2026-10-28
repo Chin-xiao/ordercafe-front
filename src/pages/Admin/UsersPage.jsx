@@ -3,9 +3,13 @@ import api from '../../api/axios';
 import { getApiErrorMessage } from '../../api/errors';
 
 export default function UsersPage() {
+  const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+  const canManagePaymentQr = currentUser.role === 'superadmin';
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [uploadingQr, setUploadingQr] = useState({});
+  const [qrUploadErrors, setQrUploadErrors] = useState({});
 
   // Modal & Form State
   const [showModal, setShowModal] = useState(false);
@@ -76,6 +80,51 @@ export default function UsersPage() {
     }
   };
 
+  const handlePaymentQrUpload = async (userId, event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp'];
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (
+      !allowedExtensions.includes(extension) ||
+      (file.type && !allowedTypes.includes(file.type))
+    ) {
+      setQrUploadErrors((previous) => ({
+        ...previous,
+        [userId]: 'Choose a JPG, PNG, or WebP image.',
+      }));
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setQrUploadErrors((previous) => ({
+        ...previous,
+        [userId]: 'The image must be no larger than 5 MB.',
+      }));
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('image', file);
+    setQrUploadErrors((previous) => ({ ...previous, [userId]: '' }));
+    setUploadingQr((previous) => ({ ...previous, [userId]: true }));
+
+    try {
+      await api.post(`/admin/users/${userId}/payment-qr`, formData);
+      await fetchUsers();
+    } catch (err) {
+      setQrUploadErrors((previous) => ({
+        ...previous,
+        [userId]: getApiErrorMessage(err, 'Failed to upload payment QR image.'),
+      }));
+    } finally {
+      setUploadingQr((previous) => ({ ...previous, [userId]: false }));
+    }
+  };
+
   if (loading) return <div className="p-6 text-gray-500 text-center">Loading users...</div>;
 
   return (
@@ -106,6 +155,7 @@ export default function UsersPage() {
               <th className="p-4">Email</th>
               <th className="p-4">Role</th>
               <th className="p-4">Created At</th>
+              {canManagePaymentQr && <th className="p-4">Payment QR</th>}
               <th className="p-4 text-right">Actions</th>
             </tr>
           </thead>
@@ -122,6 +172,42 @@ export default function UsersPage() {
                 <td className="p-4 text-gray-500 text-xs">
                   {new Date(user.created_at).toLocaleDateString()}
                 </td>
+                {canManagePaymentQr && (
+                  <td className="p-4">
+                    {user.is_admin || ['admin', 'superadmin'].includes(user.role) ? (
+                      <div className="space-y-2">
+                        {user.payment_qr_image_url && (
+                          <img
+                            src={user.payment_qr_image_url}
+                            alt={`${user.name}'s payment QR code`}
+                            className="h-20 w-20 rounded-lg border border-gray-200 object-contain"
+                          />
+                        )}
+                        <label className="block text-xs font-semibold text-emerald-700">
+                          {uploadingQr[user.id]
+                            ? 'Uploading...'
+                            : user.payment_qr_image_url
+                              ? 'Replace QR image'
+                              : 'Upload QR image'}
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                            disabled={uploadingQr[user.id]}
+                            onChange={(event) => handlePaymentQrUpload(user.id, event)}
+                            className="mt-1 block w-full text-xs font-normal text-gray-600 file:mr-2 file:rounded-lg file:border-0 file:bg-emerald-50 file:px-3 file:py-1.5 file:font-semibold file:text-emerald-700 hover:file:bg-emerald-100 disabled:opacity-50"
+                          />
+                        </label>
+                        {qrUploadErrors[user.id] && (
+                          <p role="alert" className="text-xs text-red-600">
+                            {qrUploadErrors[user.id]}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
+                  </td>
+                )}
                 <td className="p-4 text-right">
                   <button 
                     onClick={() => handleDeleteUser(user.id)}
@@ -134,7 +220,7 @@ export default function UsersPage() {
             ))}
             {users.length === 0 && !error && (
               <tr>
-                <td colSpan="5" className="p-8 text-center text-gray-500">No users found.</td>
+                <td colSpan={canManagePaymentQr ? 6 : 5} className="p-8 text-center text-gray-500">No users found.</td>
               </tr>
             )}
           </tbody>
