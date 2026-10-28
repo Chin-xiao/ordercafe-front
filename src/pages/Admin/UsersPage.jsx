@@ -107,13 +107,36 @@ export default function UsersPage() {
       return;
     }
 
-    const formData = new FormData();
-    formData.append('image', file);
     setQrUploadErrors((previous) => ({ ...previous, [userId]: '' }));
     setUploadingQr((previous) => ({ ...previous, [userId]: true }));
 
     try {
-      await api.post(`/admin/users/${userId}/payment-qr`, formData);
+      // 1. Upload directly to Cloudinary using your unsigned preset
+      const cloudinaryFormData = new FormData();
+      cloudinaryFormData.append('file', file);
+      cloudinaryFormData.append('upload_preset', 'qr_uploads');
+
+      const cloudinaryResponse = await fetch(
+        'https://api.cloudinary.com/v1_1/djxniv0op/image/upload',
+        {
+          method: 'POST',
+          body: cloudinaryFormData,
+        }
+      );
+
+      const cloudinaryData = await cloudinaryResponse.json();
+
+      if (!cloudinaryResponse.ok) {
+        throw new Error(cloudinaryData?.error?.message || 'Failed to upload to Cloudinary');
+      }
+
+      const secureUrl = cloudinaryData.secure_url;
+
+      // 2. Send the public URL to your Laravel backend to store in DB
+      await api.post(`/admin/users/${userId}/payment-qr`, {
+        payment_qr_url: secureUrl,
+      });
+
       await fetchUsers();
     } catch (err) {
       setQrUploadErrors((previous) => ({
