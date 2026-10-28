@@ -85,40 +85,16 @@ export default function UsersPage() {
     event.target.value = '';
     if (!file) return;
 
-    // 1. File validation
-    const extension = file.name.split('.').pop()?.toLowerCase();
-    const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp'];
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-
-    if (
-      !allowedExtensions.includes(extension) ||
-      (file.type && !allowedTypes.includes(file.type))
-    ) {
-      setQrUploadErrors((previous) => ({
-        ...previous,
-        [userId]: 'Choose a JPG, PNG, or WebP image.',
-      }));
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      setQrUploadErrors((previous) => ({
-        ...previous,
-        [userId]: 'The image must be no larger than 5 MB.',
-      }));
-      return;
-    }
-
-    setQrUploadErrors((previous) => ({ ...previous, [userId]: '' }));
-    setUploadingQr((previous) => ({ ...previous, [userId]: true }));
+    setQrUploadErrors((prev) => ({ ...prev, [userId]: '' }));
+    setUploadingQr((prev) => ({ ...prev, [userId]: true }));
 
     try {
-      // 2. Upload directly to Cloudinary via unsigned preset
+      // 1. Upload directly to Cloudinary
       const cloudinaryFormData = new FormData();
       cloudinaryFormData.append('file', file);
       cloudinaryFormData.append('upload_preset', 'qr_uploads');
 
-      const cloudinaryResponse = await fetch(
+      const cloudinaryRes = await fetch(
         'https://api.cloudinary.com/v1_1/djxniv0op/image/upload',
         {
           method: 'POST',
@@ -126,28 +102,28 @@ export default function UsersPage() {
         }
       );
 
-      const cloudinaryData = await cloudinaryResponse.json();
+      const cloudinaryData = await cloudinaryRes.json();
 
-      if (!cloudinaryResponse.ok) {
-        throw new Error(cloudinaryData?.error?.message || 'Failed to upload to Cloudinary');
+      if (!cloudinaryRes.ok) {
+        throw new Error(cloudinaryData?.error?.message || 'Cloudinary upload failed.');
       }
 
       const secureUrl = cloudinaryData.secure_url;
 
-      // 3. Save the resulting public HTTPS URL in your Laravel database
+      // 2. Send the URL to Laravel (matches 'payment_qr_url' validation)
       await api.post(`/admin/users/${userId}/payment-qr`, {
         payment_qr_url: secureUrl,
       });
 
-      // 4. Refresh users list
+      // 3. Refresh user list
       await fetchUsers();
     } catch (err) {
-      setQrUploadErrors((previous) => ({
-        ...previous,
-        [userId]: getApiErrorMessage(err, 'Failed to upload payment QR image.'),
+      setQrUploadErrors((prev) => ({
+        ...prev,
+        [userId]: getApiErrorMessage(err, 'Failed to update payment QR image.'),
       }));
     } finally {
-      setUploadingQr((previous) => ({ ...previous, [userId]: false }));
+      setUploadingQr((prev) => ({ ...prev, [userId]: false }));
     }
   };
 
