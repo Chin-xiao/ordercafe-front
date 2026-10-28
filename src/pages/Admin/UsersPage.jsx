@@ -8,8 +8,16 @@ export default function UsersPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // QR Upload state
   const [uploadingQr, setUploadingQr] = useState({});
   const [qrUploadErrors, setQrUploadErrors] = useState({});
+
+  // Payment Link state
+  const [paymentLinks, setPaymentLinks] = useState({});
+  const [savingLink, setSavingLink] = useState({});
+  const [linkSuccess, setLinkSuccess] = useState({});
+  const [linkErrors, setLinkErrors] = useState({});
 
   // Modal & Form State
   const [showModal, setShowModal] = useState(false);
@@ -25,7 +33,16 @@ export default function UsersPage() {
       setLoading(true);
       const response = await api.get('/admin/users');
       const userList = response.data?.data ?? response.data;
-      setUsers(Array.isArray(userList) ? userList : []);
+      const list = Array.isArray(userList) ? userList : [];
+      setUsers(list);
+
+      // Pre-fill payment links state for each user
+      const initialLinks = {};
+      list.forEach((u) => {
+        initialLinks[u.id] = u.payment_link || '';
+      });
+      setPaymentLinks(initialLinks);
+
       setError('');
     } catch (err) {
       console.error('Failed to fetch users', err);
@@ -110,7 +127,7 @@ export default function UsersPage() {
 
       const secureUrl = cloudinaryData.secure_url;
 
-      // 2. Send the URL to Laravel (matches 'payment_qr_url' validation)
+      // 2. Send the URL to Laravel backend
       await api.post(`/admin/users/${userId}/payment-qr`, {
         payment_qr_url: secureUrl,
       });
@@ -124,6 +141,30 @@ export default function UsersPage() {
       }));
     } finally {
       setUploadingQr((prev) => ({ ...prev, [userId]: false }));
+    }
+  };
+
+  const handleSavePaymentLink = async (userId) => {
+    setSavingLink((prev) => ({ ...prev, [userId]: true }));
+    setLinkSuccess((prev) => ({ ...prev, [userId]: false }));
+    setLinkErrors((prev) => ({ ...prev, [userId]: '' }));
+
+    try {
+      await api.patch(`/admin/users/${userId}/payment-link`, {
+        payment_link: paymentLinks[userId] || null,
+      });
+
+      setLinkSuccess((prev) => ({ ...prev, [userId]: true }));
+      setTimeout(() => {
+        setLinkSuccess((prev) => ({ ...prev, [userId]: false }));
+      }, 2500);
+    } catch (err) {
+      setLinkErrors((prev) => ({
+        ...prev,
+        [userId]: getApiErrorMessage(err, 'Failed to save link.'),
+      }));
+    } finally {
+      setSavingLink((prev) => ({ ...prev, [userId]: false }));
     }
   };
 
@@ -158,6 +199,7 @@ export default function UsersPage() {
               <th className="p-4">Role</th>
               <th className="p-4">Created At</th>
               {canManagePaymentQr && <th className="p-4">Payment QR</th>}
+              {canManagePaymentQr && <th className="p-4">Payment Link</th>}
               <th className="p-4 text-right">Actions</th>
             </tr>
           </thead>
@@ -174,6 +216,8 @@ export default function UsersPage() {
                 <td className="p-4 text-gray-500 text-xs">
                   {new Date(user.created_at).toLocaleDateString()}
                 </td>
+
+                {/* Payment QR Column */}
                 {canManagePaymentQr && (
                   <td className="p-4">
                     {user.is_admin || ['admin', 'superadmin'].includes(user.role) ? (
@@ -182,7 +226,7 @@ export default function UsersPage() {
                           <img
                             src={user.payment_qr_image_url}
                             alt={`${user.name}'s payment QR code`}
-                            className="h-20 w-20 rounded-lg border border-gray-200 object-contain"
+                            className="h-16 w-16 rounded-lg border border-gray-200 object-contain"
                           />
                         )}
                         <label className="block text-xs font-semibold text-emerald-700">
@@ -210,6 +254,48 @@ export default function UsersPage() {
                     )}
                   </td>
                 )}
+
+                {/* Payment Link Column */}
+                {canManagePaymentQr && (
+                  <td className="p-4">
+                    {user.is_admin || ['admin', 'superadmin'].includes(user.role) ? (
+                      <div className="space-y-1 max-w-xs">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="url"
+                            placeholder="https://pay.ababank.com/..."
+                            value={paymentLinks[user.id] ?? ''}
+                            onChange={(e) =>
+                              setPaymentLinks((prev) => ({
+                                ...prev,
+                                [user.id]: e.target.value,
+                              }))
+                            }
+                            className="w-full text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-emerald-500 outline-none"
+                          />
+                          <button
+                            type="button"
+                            disabled={savingLink[user.id]}
+                            onClick={() => handleSavePaymentLink(user.id)}
+                            className="text-xs px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold transition disabled:opacity-50 shrink-0"
+                          >
+                            {savingLink[user.id] ? 'Saving...' : 'Save'}
+                          </button>
+                        </div>
+                        {linkSuccess[user.id] && (
+                          <p className="text-[11px] text-emerald-600 font-medium">✓ Saved successfully</p>
+                        )}
+                        {linkErrors[user.id] && (
+                          <p className="text-[11px] text-red-600">{linkErrors[user.id]}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
+                  </td>
+                )}
+
+                {/* Actions Column */}
                 <td className="p-4 text-right">
                   <button 
                     onClick={() => handleDeleteUser(user.id)}
@@ -222,7 +308,9 @@ export default function UsersPage() {
             ))}
             {users.length === 0 && !error && (
               <tr>
-                <td colSpan={canManagePaymentQr ? 6 : 5} className="p-8 text-center text-gray-500">No users found.</td>
+                <td colSpan={canManagePaymentQr ? 7 : 5} className="p-8 text-center text-gray-500">
+                  No users found.
+                </td>
               </tr>
             )}
           </tbody>
