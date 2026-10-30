@@ -27,7 +27,7 @@ export default function AdminLayout() {
         <div className="border-b border-slate-800 px-5 py-4 text-lg font-bold text-white md:p-6 md:text-xl">
           ☕ Cafe Admin
         </div>
-        <nav aria-label="Admin navigation" className="flex gap-1 overflow-x-auto p-2 md:flex-1 md:flex-col md:gap-1 md:overflow-visible md:p-4">
+       <nav aria-label="Admin navigation" className="flex gap-1 overflow-x-auto p-2 md:flex-1 md:flex-col md:gap-1 md:overflow-visible md:p-4">
           {[
             ['/admin/dashboard', '📊 Dashboard'],
             ['/admin/sessions', '🕒 Order Sessions'],
@@ -35,8 +35,12 @@ export default function AdminLayout() {
             ['/admin/reports', '📈 Sales Reports'],
             ['/admin/telegram-settings', '🤖 Telegram Bot'],
             ['/admin/telegram-customers', '👥 Telegram Customers'],
-            // ONLY include 'Staff & Users' if the user is a superadmin
-            ...(isSuperAdmin ? [['/admin/users', '👥 Staff & Users']] : []),
+            
+            // ONLY include 'Stores Management' if the user is a superadmin
+            ...(isSuperAdmin ? [
+              ['/admin/stores', '🏪 Stores Management'],
+              ['/admin/users', '👥 Staff & Users']
+            ] : []),
           ].map(([to, label]) => (
             <NavLink
               key={to}
