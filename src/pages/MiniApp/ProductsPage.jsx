@@ -65,7 +65,7 @@ const SessionHeader = React.memo(function SessionHeader({ session, sessionVerifi
 
   return (
     <>
-      <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-emerald-800/10 bg-emerald-700 px-4 py-3 text-white shadow-sm">
+      <header className="sticky top-0 z-25 flex items-center justify-between gap-3 border-b border-emerald-800/10 bg-emerald-700 px-4 py-3 text-white shadow-sm">
         <div>
           <h1 className="text-base font-bold leading-tight">{session?.title || 'Cafe Menu'}</h1>
           <p className="mt-0.5 text-xs text-emerald-100">
@@ -75,11 +75,9 @@ const SessionHeader = React.memo(function SessionHeader({ session, sessionVerifi
         <div className="max-w-[45%] rounded-full bg-emerald-800 px-3 py-1.5 text-right text-[11px] font-semibold leading-tight">
           {orderingOpen
             ? `Open · Closes ${new Date(session.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
-            : session
-              ? status.toLowerCase() === 'expired' ? 'Expired' : 'Ordering closed'
-              : sessionVerified
-                ? 'No Session'
-                : 'Checking...'}
+            : sessionVerified
+              ? (session ? (status.toLowerCase() === 'expired' ? 'Expired' : 'Ordering closed') : 'No Session')
+              : 'Connecting...'}
         </div>
       </header>
       <section
@@ -89,7 +87,9 @@ const SessionHeader = React.memo(function SessionHeader({ session, sessionVerifi
             ? nearExpiration
               ? 'border-amber-300 bg-amber-50 text-amber-900'
               : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-            : 'border-red-200 bg-red-50 text-red-800'
+            : !sessionVerified
+              ? 'border-sky-200 bg-sky-50 text-sky-900' // 👈 Friendly loading state while waking up Render
+              : 'border-red-200 bg-red-50 text-red-800'
         }`}
       >
         {orderingOpen ? (
@@ -101,6 +101,15 @@ const SessionHeader = React.memo(function SessionHeader({ session, sessionVerifi
               {formatRemainingTime(session.expires_at, now)}
             </p>
           </>
+        ) : !sessionVerified ? (
+          // 👈 Show this while waiting for Render to wake up
+          <div className="flex items-center space-x-3">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-sky-700"></div>
+            <div>
+              <p className="font-bold">Waking up the Cafe Server...</p>
+              <p className="text-xs mt-0.5">Please wait a moment while we connect to the kitchen.</p>
+            </div>
+          </div>
         ) : (
           <>
             <p className="font-bold">Ordering is closed</p>
@@ -109,9 +118,7 @@ const SessionHeader = React.memo(function SessionHeader({ session, sessionVerifi
                 ? `This ordering session is ${status.toLowerCase()}. It closed at ${formatDateTime(session.expires_at)}.`
                 : 'There is no currently open order session.'}
             </p>
-            {(sessionError || !sessionVerified) && (
-              <p className="mt-1">{sessionError || 'Verifying session status with the server...'}</p>
-            )}
+            {sessionError && <p className="mt-1">{sessionError}</p>}
             <button type="button" onClick={onRefresh} className="mt-2 min-h-11 font-semibold underline">
               Refresh session status
             </button>
@@ -225,20 +232,27 @@ export default function MiniAppProductsPage() {
     return request;
   }, []);
 
-  useEffect(() => {
+ useEffect(() => {
     getTelegramWebApp();
     const controller = new AbortController();
     sessionSignalRef.current = controller.signal;
     menuSignalRef.current = controller.signal;
-    const startup = window.setTimeout(() => {
-      fetchMenu(controller.signal);
-      fetchSession(controller.signal);
+    
+    const startup = window.setTimeout(async () => {
+      // 👈 Fetch both concurrently so they don't waterfall
+      await Promise.all([
+        fetchMenu(controller.signal),
+        fetchSession(controller.signal)
+      ]);
     }, 0);
+
     const refresh = window.setInterval(() => fetchSession(controller.signal), SESSION_REFRESH_MS);
     const refreshWhenVisible = () => {
       if (document.visibilityState === 'visible') {
-        fetchMenu(controller.signal);
-        fetchSession(controller.signal);
+        Promise.all([
+          fetchMenu(controller.signal),
+          fetchSession(controller.signal)
+        ]);
       }
     };
     document.addEventListener('visibilitychange', refreshWhenVisible);
