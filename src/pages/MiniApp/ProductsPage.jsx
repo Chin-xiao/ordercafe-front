@@ -7,10 +7,10 @@ import { formatRiel } from '../../utils/currency';
 import { getOrderSessionLaunch, getTelegramWebApp } from '../../utils/telegram';
 import { isOrderSessionOpen, unwrapApiData } from '../../utils/orderSession';
 
-import SessionBanner from './SessionBanner';
-import ProductGrid from './ProductGrid';
 import CartCheckoutModal from './CartCheckoutModal';
 import SugarSelectionModal from './SugarSelectionModal';
+import SessionBanner from '../../components/miniapp/SessionBanner';
+import ProductGrid from '../../components/miniapp/ProductGrid';
 
 const SESSION_REFRESH_MS = 15000;
 const INITIAL_NOW = Date.now();
