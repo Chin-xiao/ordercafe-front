@@ -1,5 +1,17 @@
+// src/pages/Admin/TelegramSettingsPage.jsx
 import React, { useEffect, useState } from 'react';
 import api from '../../api/axios';
+import { getApiErrorMessage } from '../../api/errors';
+import {
+  Icon,
+  PageHeader,
+  Card,
+  StatCard,
+  Button,
+  Badge,
+  input,
+} from '../../components/ui';
+import CoffeeLoader from '../../components/CoffeeLoader';
 
 export default function TelegramSettingsPage() {
   const [setting, setSetting] = useState(null);
@@ -7,16 +19,20 @@ export default function TelegramSettingsPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
-  const fetchSettings = async () => {
+  const fetchSettings = async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError('');
       const res = await api.get('/admin/telegram-settings');
       setSetting(res.data.data || res.data);
     } catch (err) {
       console.error('Failed to load telegram settings', err);
-      setError(err.response?.data?.message || 'Failed to load Telegram connection details.');
+      setError(
+        err.response?.data?.message ||
+        getApiErrorMessage(err, 'Failed to load Telegram connection details.')
+      );
     } finally {
       setLoading(false);
     }
@@ -24,124 +40,207 @@ export default function TelegramSettingsPage() {
 
   useEffect(() => {
     fetchSettings();
-    // Poll every 15 seconds to automatically update when the group is linked
-    const interval = setInterval(fetchSettings, 15000);
+    // Poll quietly every 15 seconds to automatically update when the group is linked
+    const interval = setInterval(() => fetchSettings({ silent: true }), 15000);
     return () => clearInterval(interval);
   }, []);
 
   const handleRegenerate = async () => {
-    if (!window.confirm('Generate a new setup token? Existing linked groups will remain connected.')) return;
+    if (!window.confirm('Generate a new setup token? Existing linked groups will remain connected.')) {
+      return;
+    }
+
     try {
       setActionLoading(true);
+      setError('');
+      setNotice('');
       const res = await api.post('/admin/telegram-settings/regenerate');
       setSetting(res.data.data || res.data);
-      alert('New verification token generated successfully!');
+      setNotice('New verification token generated successfully.');
     } catch (err) {
-      alert('Failed to regenerate token.');
+      setError(
+        err.response?.data?.message ||
+        getApiErrorMessage(err, 'Failed to regenerate verification token.')
+      );
     } finally {
       setActionLoading(false);
     }
   };
 
   const copyToClipboard = (text) => {
+    if (!text) return;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   if (loading && !setting) {
-    return <div className="p-6 text-gray-500 text-center">Loading Telegram settings...</div>;
+    return (
+      <CoffeeLoader
+        fullScreen={false}
+        title="Brewing bot settings"
+        message="Fetching Telegram connection details."
+      />
+    );
   }
 
   const setupCommand = setting?.setup_command;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-800">Telegram Bot Integration</h1>
-        <p className="text-xs text-gray-500 mt-1">Connect your Telegram group to receive real-time cafe order notifications.</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Telegram bot"
+        description="Connect your Telegram group to receive real-time cafe order notifications."
+      />
 
       {error && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-xl text-xs font-medium border border-red-200">
-          {error}
+        <div
+          role="alert"
+          className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex items-center gap-2.5">
+            <Icon name="close" size={18} className="shrink-0 text-rose-500" />
+            <p>{error}</p>
+          </div>
+          <Button
+            variant="secondary"
+            className="self-start sm:self-auto min-h-[36px] px-3 py-1.5 text-xs"
+            onClick={() => fetchSettings()}
+          >
+            Retry
+          </Button>
         </div>
       )}
 
-      {/* Connection Status Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Status</span>
-          <div className="flex items-center gap-2 mt-1">
-            {setting?.is_verified ? (
-              <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                Bot Connected & Verified
-              </span>
-            ) : (
-              <span className="px-3 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-full flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                Waiting for Group Link
-              </span>
-            )}
+      {notice && (
+        <div
+          role="status"
+          className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"
+        >
+          <div className="flex items-center gap-2.5">
+            <Icon name="check" size={18} className="shrink-0 text-emerald-600" />
+            <p>{notice}</p>
           </div>
-        </div>
-
-        {setting?.is_verified && (
-          <div className="bg-gray-50 px-4 py-3 rounded-xl border border-gray-100 text-xs space-y-1">
-            <p className="text-gray-500 font-semibold">Linked Group:</p>
-            <p className="font-bold text-gray-800 text-sm">{setting?.group_name || 'Telegram Group'}</p>
-            <p className="text-gray-400 font-mono text-[10px]">Chat ID: {setting?.chat_id}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Verification Instructions Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-4">
-        {setupCommand ? (
-          <>
-            <h3 className="text-sm font-bold text-gray-800">🔗 How to Link Your Group</h3>
-            <ol className="list-decimal list-inside text-xs text-gray-600 space-y-2">
-              <li>Add your Telegram bot to your group chat and make it an <strong className="text-gray-800">Administrator</strong>.</li>
-              <li>Click <strong className="text-gray-800">Copy Command</strong> to grab your unique setup key.</li>
-              <li>Paste and send the command directly inside your Telegram group chat.</li>
-            </ol>
-
-            <div className="pt-2">
-              <label className="block text-xs font-semibold text-gray-500 mb-1">
-                {setting?.is_verified ? 'Setup Command for Another Group' : 'Your Setup Command'}
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={setupCommand}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 font-mono text-sm text-gray-800 outline-none"
-                />
-                <button
-                  onClick={() => copyToClipboard(setupCommand)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-5 py-2.5 rounded-xl text-xs shadow transition whitespace-nowrap"
-                >
-                  {copied ? 'Copied! ✓' : 'Copy Command'}
-                </button>
-              </div>
-            </div>
-          </>
-        ) : (
-          <p className="text-xs text-gray-500">Your group is linked. Generate a setup token only if you want to connect another group.</p>
-        )}
-
-        <div className="pt-4 border-t border-gray-100 flex justify-between items-center">
-          <p className="text-xs text-gray-400">Need to link another group? Generate an additional setup token.</p>
-          <button 
-            disabled={actionLoading}
-            onClick={handleRegenerate}
-            className="border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold px-4 py-2 rounded-xl transition disabled:opacity-50"
+          <button
+            type="button"
+            onClick={() => setNotice('')}
+            aria-label="Dismiss notice"
+            className="rounded-lg p-1 text-emerald-700 transition-colors hover:bg-emerald-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
           >
-            {actionLoading ? 'Generating...' : setupCommand ? 'Generate Another Token' : 'Generate Setup Token'}
+            <Icon name="close" size={16} />
           </button>
         </div>
-      </div>
+      )}
+
+      {/* Status overview cards */}
+      <section aria-label="Bot status summary" className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <StatCard
+          label="Bot connection"
+          value={setting?.is_verified ? 'Verified' : 'Pending'}
+          hint={
+            setting?.is_verified
+              ? 'Bot is actively sending notifications'
+              : 'Waiting for setup command in group'
+          }
+          icon="bot"
+          tone={setting?.is_verified ? 'green' : 'amber'}
+        />
+        <StatCard
+          label="Linked group"
+          value={setting?.group_name || (setting?.is_verified ? 'Telegram group' : 'Not linked')}
+          hint={
+            setting?.chat_id
+              ? `Chat ID: ${setting.chat_id}`
+              : 'No group chat connected yet'
+          }
+          icon="message"
+          tone={setting?.is_verified ? 'blue' : 'rose'}
+        />
+      </section>
+
+      {/* Setup Instructions Card */}
+      <Card
+        title="Link your Telegram group"
+        action={
+          <Badge tone={setting?.is_verified ? 'green' : 'amber'}>
+            {setting?.is_verified ? 'Active connection' : 'Pending link'}
+          </Badge>
+        }
+      >
+        <div className="space-y-5">
+          {setupCommand ? (
+            <>
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-stone-900">Follow these steps:</h3>
+                <ol className="list-decimal space-y-2 pl-5 text-sm text-stone-600">
+                  <li>
+                    Add your Telegram bot to your group chat and promote it to{' '}
+                    <strong className="font-semibold text-stone-900">Administrator</strong>.
+                  </li>
+                  <li>
+                    Click <strong className="font-semibold text-stone-900">Copy command</strong> below
+                    to copy your unique setup key.
+                  </li>
+                  <li>
+                    Paste and send the command directly in your Telegram group chat.
+                  </li>
+                </ol>
+              </div>
+
+              <div className="space-y-1.5 pt-2">
+                <label
+                  htmlFor="telegram-setup-command"
+                  className="block text-xs font-semibold text-stone-600"
+                >
+                  {setting?.is_verified
+                    ? 'Setup command for another group'
+                    : 'Your setup command'}
+                </label>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    id="telegram-setup-command"
+                    type="text"
+                    readOnly
+                    value={setupCommand}
+                    className={`${input} font-mono text-xs sm:text-sm text-stone-800`}
+                  />
+                  <Button
+                    variant="primary"
+                    icon={copied ? 'check' : undefined}
+                    onClick={() => copyToClipboard(setupCommand)}
+                    className="min-h-[40px] shrink-0 whitespace-nowrap"
+                  >
+                    {copied ? 'Copied' : 'Copy command'}
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-stone-500">
+              Your group is linked and verified. Generate a setup token only if you want to connect
+              another Telegram group.
+            </p>
+          )}
+
+          <div className="flex flex-col gap-3 border-t border-stone-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-stone-500">
+              Need to link another group? Generate an additional setup token.
+            </p>
+            <Button
+              variant="secondary"
+              disabled={actionLoading}
+              onClick={handleRegenerate}
+              className="min-h-[38px] text-xs font-semibold"
+            >
+              {actionLoading
+                ? 'Generating…'
+                : setupCommand
+                  ? 'Generate another token'
+                  : 'Generate setup token'}
+            </Button>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

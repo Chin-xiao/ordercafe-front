@@ -1,31 +1,70 @@
-import React, { useEffect, useState } from 'react';
+// src/pages/admin/ProductsPage.jsx
+import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../../api/axios';
+import { cachedGet, peek } from '../../api/cachedGet';
 import { getApiErrorMessage } from '../../api/errors';
+import { Icon, Button, Badge, EmptyState, input } from '../../components/ui';
+import CoffeeLoader from '../../components/CoffeeLoader';
+
+const unwrap = (res) => {
+  const list = res?.data?.data ?? res?.data;
+  return Array.isArray(list) ? list : null;
+};
+
+const EMPTY_FORM = { name: '', categoryId: '', price: '', imageUrl: '', requiresSugar: false };
+
+function Toggle({ checked, onChange, label }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={onChange}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 ${checked ? 'bg-[#ef5a3c]' : 'bg-stone-300'}`}>
+      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${checked ? 'left-[22px]' : 'left-0.5'}`} />
+    </button>
+  );
+}
+
+function Thumb({ src, alt = '', className = '' }) {
+  return (
+    <div className={`relative flex items-center justify-center overflow-hidden bg-stone-100 text-stone-300 ${className}`}>
+      <Icon name="cup" size={36} />
+      {src && (
+        <img src={src} alt={alt} loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          className="absolute inset-0 h-full w-full object-cover" />
+      )}
+    </div>
+  );
+}
 
 export default function ProductsPage() {
-  const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [params] = useSearchParams();
+  const q = (params.get('q') || '').trim().toLowerCase();
+
+  // Show the last known data instantly (if any) and refresh it quietly in the background
+  const cachedProducts = unwrap(peek('/admin/products'));
+  const cachedCategories = unwrap(peek('/admin/categories'));
+  const hasCache = Boolean(cachedProducts && cachedCategories);
+
+  const [products, setProducts] = useState(cachedProducts || []);
+  const [categories, setCategories] = useState(cachedCategories || []);
+  const [loading, setLoading] = useState(!hasCache);
   const [loadError, setLoadError] = useState('');
-  
-  // Modal & Form State
-  const [showModal, setShowModal] = useState(false);
+
+  const [cat, setCat] = useState('all');
+  const [status, setStatus] = useState('all');
+
+  // Panel / form state
+  const [showPanel, setShowPanel] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
-  const [name, setName] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [price, setPrice] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [requiresSugar, setRequiresSugar] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const fetchData = async () => {
+  const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const fetchData = async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
-      const [prodRes, catRes] = await Promise.all([
-        api.get('/admin/products'),
-        api.get('/admin/categories')
-      ]);
+      if (!silent) setLoading(true);
+      const [prodRes, catRes] = await Promise.all([cachedGet('/admin/products'), cachedGet('/admin/categories')]);
       const productList = prodRes.data?.data ?? prodRes.data;
       const categoryList = catRes.data?.data ?? catRes.data;
       if (!Array.isArray(productList) || !Array.isArray(categoryList)) {
@@ -44,54 +83,53 @@ export default function ProductsPage() {
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData({ silent: hasCache }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleOpenCreateModal = () => {
+  useEffect(() => {
+    if (!showPanel) return undefined;
+    const onKey = (e) => e.key === 'Escape' && setShowPanel(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showPanel]);
+
+  const productCategoryId = (p) => String(p.category_id ?? p.category?.id ?? '');
+
+  const openCreate = () => {
     setEditingProduct(null);
-    setName('');
-    setCategoryId('');
-    setPrice('');
-    setImageUrl('');
-    setRequiresSugar(false);
+    setForm({ ...EMPTY_FORM, categoryId: cat === 'all' ? '' : cat });
     setError('');
-    setShowModal(true);
+    setShowPanel(true);
   };
 
-  const handleOpenEditModal = (product) => {
+  const openEdit = (product) => {
     setEditingProduct(product);
-    setName(product.name || '');
-    setCategoryId(product.category_id || product.category?.id || '');
-    setPrice(product.price || '');
-    setImageUrl(product.image_url || '');
-    setRequiresSugar(product.requires_sugar ?? false);
+    setForm({
+      name: product.name || '',
+      categoryId: productCategoryId(product),
+      price: product.price || '',
+      imageUrl: product.image_url || '',
+      requiresSugar: product.requires_sugar ?? false,
+    });
     setError('');
-    setShowModal(true);
+    setShowPanel(true);
   };
 
   const handleSaveProduct = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     setError('');
-
     try {
       const payload = {
-        name,
-        category_id: categoryId,
-        price,
-        image_url: imageUrl,
-        requires_sugar: requiresSugar,
+        name: form.name,
+        category_id: form.categoryId,
+        price: form.price,
+        image_url: form.imageUrl,
+        requires_sugar: form.requiresSugar,
       };
-
-      if (editingProduct) {
-        await api.put(`/admin/products/${editingProduct.id}`, payload);
-      } else {
-        await api.post('/admin/products', payload);
-      }
-
-      setShowModal(false);
-      fetchData();
+      if (editingProduct) await api.put(`/admin/products/${editingProduct.id}`, payload);
+      else await api.post('/admin/products', payload);
+      setShowPanel(false);
+      fetchData({ silent: true });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to save product.'));
     } finally {
@@ -102,7 +140,8 @@ export default function ProductsPage() {
   const toggleAvailability = async (id) => {
     try {
       await api.patch(`/admin/products/${id}/availability`);
-      fetchData();
+      setEditingProduct((p) => (p && p.id === id ? { ...p, is_available: !p.is_available } : p));
+      fetchData({ silent: true });
     } catch (err) {
       setLoadError(getApiErrorMessage(err, 'Failed to update product availability.'));
     }
@@ -112,199 +151,177 @@ export default function ProductsPage() {
     if (!window.confirm('Are you sure you want to delete this product?')) return;
     try {
       await api.delete(`/admin/products/${id}`);
-      fetchData();
+      setShowPanel(false);
+      fetchData({ silent: true });
     } catch (err) {
       setLoadError(getApiErrorMessage(err, 'Failed to delete product.'));
     }
   };
 
-  if (loading) return <div className="p-6 text-gray-500 text-center">Loading products...</div>;
+  const counts = useMemo(() => {
+    const c = { all: products.length };
+    categories.forEach((k) => { c[String(k.id)] = products.filter((p) => productCategoryId(p) === String(k.id)).length; });
+    return c;
+  }, [products, categories]);
+
+  const visible = products.filter((p) =>
+    (cat === 'all' || productCategoryId(p) === cat) &&
+    (status === 'all' || (status === 'available') === Boolean(p.is_available)) &&
+    (p.name || '').toLowerCase().includes(q));
+
+  if (loading) return <CoffeeLoader fullScreen={false} title="Brewing your menu" />;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Product Management</h1>
-        <button 
-          onClick={handleOpenCreateModal}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-lg shadow transition text-sm"
-        >
-          + Add New Product
-        </button>
-      </div>
+    <div className="flex flex-col gap-6 p-4 md:p-6 xl:flex-row">
+      <div className="min-w-0 flex-1">
+        {loadError && (
+          <div role="alert" className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+            <p>{loadError}</p>
+            <Button variant="secondary" onClick={() => fetchData()} className="shrink-0 !py-1.5">Retry</Button>
+          </div>
+        )}
 
-      {loadError && (
-        <div role="alert" className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          <p>{loadError}</p>
-          <button onClick={fetchData} className="mt-2 font-semibold underline">Retry</button>
+        {/* Categories */}
+        <h1 className="text-lg font-bold text-stone-900">Categories</h1>
+        <div className="-mx-1 mt-3 flex gap-3 overflow-x-auto px-1 pb-2">
+          {[{ id: 'all', name: 'All menu' }, ...categories].map((c) => {
+            const id = String(c.id);
+            const active = cat === id;
+            return (
+              <button key={id} type="button" onClick={() => setCat(id)} aria-pressed={active}
+                className={`flex w-24 shrink-0 flex-col items-center gap-1 rounded-2xl border px-2 py-3 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 ${
+                  active ? 'border-[#ef5a3c] bg-[#fff1ed]' : 'border-stone-200 bg-white hover:border-stone-300'}`}>
+                <span className={`flex h-9 w-9 items-center justify-center rounded-full ${active ? 'bg-[#ef5a3c] text-white' : 'bg-stone-100 text-stone-500'}`}>
+                  <Icon name="cup" size={18} />
+                </span>
+                <span className="w-full truncate text-sm font-semibold text-stone-900">{c.name}</span>
+                <span className="text-xs text-stone-500">{counts[id] ?? 0} items</span>
+              </button>
+            );
+          })}
         </div>
-      )}
 
-      {/* Products Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase text-gray-500 font-semibold">
-              <th className="p-4">Image</th>
-              <th className="p-4">Product Name</th>
-              <th className="p-4">Category</th>
-              <th className="p-4">Price</th>
-              <th className="p-4">Sugar Option</th>
-              <th className="p-4">Status</th>
-              <th className="p-4 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 text-sm">
-            {products.map((product) => (
-              <tr key={product.id} className="hover:bg-gray-50 transition">
-                <td className="p-4">
-                  <img 
-                    src={product.image_url || 'https://via.placeholder.com/50'} 
-                    alt={product.name} 
-                    className="w-12 h-12 object-cover rounded-lg border border-gray-100 shadow-xs"
-                  />
-                </td>
-                <td className="p-4 font-semibold text-gray-800">{product.name}</td>
-                <td className="p-4 text-gray-600">{product.category?.name || 'Uncategorized'}</td>
-                <td className="p-4 font-medium text-emerald-600">${Number(product.price).toFixed(2)}</td>
-                <td className="p-4">
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${product.requires_sugar ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'}`}>
-                    {product.requires_sugar ? 'Required' : 'None'}
-                  </span>
-                </td>
-                <td className="p-4">
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${product.is_available ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
-                    {product.is_available ? 'Available' : 'Unavailable'}
-                  </span>
-                </td>
-                <td className="p-4 text-right space-x-3">
-                  <button 
-                    onClick={() => handleOpenEditModal(product)}
-                    className="text-emerald-600 hover:underline text-xs font-medium"
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    onClick={() => toggleAvailability(product.id)}
-                    className="text-blue-600 hover:underline text-xs font-medium"
-                  >
-                    Toggle Status
-                  </button>
-                  <button 
-                    onClick={() => handleDelete(product.id)}
-                    className="text-red-600 hover:underline text-xs font-medium"
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {!loadError && products.length === 0 && (
-              <tr>
-                <td colSpan="7" className="p-8 text-center text-gray-500">No products found. Add your first item!</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Add / Edit Product Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl animate-fade-in">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-gray-800">
-                {editingProduct ? 'Edit Product' : 'Add New Product'}
-              </h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 font-bold">✕</button>
-            </div>
-
-            {error && <div className="mb-4 text-xs text-red-600 bg-red-50 p-3 rounded-xl border border-red-200">{error}</div>}
-
-            <form onSubmit={handleSaveProduct} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Product Name</label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Iced Latte"
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Category</label>
-                <select
-                  required
-                  value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white"
-                >
-                  <option value="">Select Category</option>
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Price ($)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder="2.50"
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Image URL</label>
-                <input
-                  type="url"
-                  value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
-                  placeholder="https://example.com/image.jpg"
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-
-              <div className="flex items-center space-x-2 pt-2">
-                <input
-                  type="checkbox"
-                  id="requiresSugar"
-                  checked={requiresSugar}
-                  onChange={(e) => setRequiresSugar(e.target.checked)}
-                  className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
-                />
-                <label htmlFor="requiresSugar" className="text-xs font-semibold text-gray-700 cursor-pointer">
-                  Requires Sugar Selection (e.g. for coffees & teas)
-                </label>
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 shadow transition disabled:opacity-50"
-                >
-                  {submitting ? 'Saving...' : 'Save Product'}
-                </button>
-              </div>
-            </form>
+        {/* Toolbar */}
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-bold text-stone-900">Products</h2>
+          <div className="flex items-center gap-2">
+            <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status"
+              className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700 focus:outline-none focus:ring-2 focus:ring-[#ef5a3c]/20">
+              <option value="all">All status</option>
+              <option value="available">Available</option>
+              <option value="unavailable">Unavailable</option>
+            </select>
+            <Button icon="plus" onClick={openCreate}>Add product</Button>
           </div>
         </div>
-      )}
+
+        {/* Grid */}
+        {visible.length === 0 ? (
+          !loadError && (
+            <EmptyState title={products.length === 0 ? 'Add your first product' : 'No products found'}
+              description={products.length === 0 ? 'Products you add here appear in your Mini App menu.' : 'Try another category, status, or search.'}
+              action={<Button icon="plus" onClick={openCreate}>Add product</Button>} />
+          )
+        ) : (
+          <ul className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-3 2xl:grid-cols-4">
+            {visible.map((p) => {
+              const selected = showPanel && editingProduct?.id === p.id;
+              return (
+                <li key={p.id}
+                  className={`overflow-hidden rounded-2xl border bg-white transition-shadow hover:shadow-md ${selected ? 'border-[#ef5a3c] ring-2 ring-[#ef5a3c]/20' : 'border-stone-200'}`}>
+                  <button type="button" onClick={() => openEdit(p)}
+                    className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300">
+                    <Thumb src={p.image_url} alt={p.name} className={`aspect-[4/3] w-full ${p.is_available ? '' : 'opacity-50'}`} />
+                    <div className="p-3 pb-2">
+                      <p className="truncate text-sm font-semibold text-stone-900">{p.name}</p>
+                      <p className="truncate text-xs text-stone-500">{p.category?.name || 'Uncategorized'}</p>
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="text-base font-bold text-stone-900">${Number(p.price).toFixed(2)}</span>
+                        {p.requires_sugar && <Badge tone="amber">Sugar option</Badge>}
+                      </div>
+                    </div>
+                  </button>
+                  <div className="flex items-center justify-between border-t border-stone-100 px-3 py-2">
+                    <Badge tone={p.is_available ? 'green' : 'red'}>{p.is_available ? 'Available' : 'Unavailable'}</Badge>
+                    <Toggle checked={Boolean(p.is_available)} onChange={() => toggleAvailability(p.id)} label={`Availability of ${p.name}`} />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {/* Add / edit panel: sidebar on wide screens, bottom sheet on small ones */}
+      <aside aria-label="Product details"
+        className={`${showPanel ? 'fixed inset-0 z-50 flex items-end bg-black/40 xl:static xl:z-auto xl:block xl:bg-transparent' : 'hidden xl:block'} w-full shrink-0 xl:sticky xl:top-6 xl:w-80 xl:self-start`}
+        onClick={(e) => { if (e.target === e.currentTarget) setShowPanel(false); }}>
+        <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-stone-200 bg-white p-5 xl:max-h-none xl:rounded-2xl">
+          {!showPanel ? (
+            <EmptyState icon="cup" title="Select a product" description="Pick a product to edit it, or add a new one for your Mini App."
+              action={<Button icon="plus" onClick={openCreate}>Add product</Button>} />
+          ) : (
+            <form onSubmit={handleSaveProduct}>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-stone-900">{editingProduct ? 'Edit product' : 'New product'}</h2>
+                <button type="button" onClick={() => setShowPanel(false)} aria-label="Close"
+                  className="rounded-md p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700">
+                  <Icon name="close" size={18} />
+                </button>
+              </div>
+
+              {error && <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{error}</div>}
+
+              <Thumb src={form.imageUrl} className="mt-4 aspect-[4/3] w-full rounded-xl" />
+
+              <div className="mt-4 space-y-3">
+                <label className="block text-sm font-medium text-stone-700">Product name
+                  <input className={`${input} mt-1`} type="text" required value={form.name}
+                    onChange={(e) => setField('name', e.target.value)} placeholder="Iced latte" />
+                </label>
+                <label className="block text-sm font-medium text-stone-700">Category
+                  <select className={`${input} mt-1`} required value={form.categoryId} onChange={(e) => setField('categoryId', e.target.value)}>
+                    <option value="">Select a category</option>
+                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </label>
+                <label className="block text-sm font-medium text-stone-700">Price ($)
+                  <input className={`${input} mt-1`} type="number" step="0.01" min="0" required value={form.price}
+                    onChange={(e) => setField('price', e.target.value)} placeholder="2.50" />
+                </label>
+                <label className="block text-sm font-medium text-stone-700">Image URL
+                  <input className={`${input} mt-1`} type="url" value={form.imageUrl}
+                    onChange={(e) => setField('imageUrl', e.target.value)} placeholder="https://example.com/image.jpg" />
+                </label>
+
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-stone-50 px-3 py-2.5">
+                  <span className="text-sm text-stone-700">
+                    <span className="block font-medium">Ask for sugar level</span>
+                    <span className="block text-xs text-stone-500">For coffees and teas</span>
+                  </span>
+                  <Toggle checked={form.requiresSugar} onChange={() => setField('requiresSugar', !form.requiresSugar)} label="Requires sugar selection" />
+                </div>
+
+                {editingProduct && (
+                  <div className="flex items-center justify-between gap-3 rounded-xl bg-stone-50 px-3 py-2.5">
+                    <span className="text-sm font-medium text-stone-700">Available in Mini App</span>
+                    <Toggle checked={Boolean(editingProduct.is_available)} onChange={() => toggleAvailability(editingProduct.id)} label="Available in Mini App" />
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-5 flex gap-2">
+                {editingProduct && (
+                  <Button variant="secondary" icon="trash" onClick={() => handleDelete(editingProduct.id)} className="!text-rose-600">Delete</Button>
+                )}
+                <Button type="submit" disabled={submitting} className="flex-1">
+                  {submitting ? 'Saving…' : editingProduct ? 'Save changes' : 'Add product'}
+                </Button>
+              </div>
+            </form>
+          )}
+        </div>
+      </aside>
     </div>
   );
 }

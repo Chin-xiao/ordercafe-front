@@ -1,3 +1,4 @@
+// src/pages/Admin/OrderSessionsPage.jsx
 import React, { useEffect, useState } from 'react';
 import api from '../../api/axios';
 import { getApiErrorMessage } from '../../api/errors';
@@ -7,6 +8,22 @@ import {
   getSessionStatus,
   unwrapApiData,
 } from '../../utils/orderSession';
+import {
+  Icon,
+  PageHeader,
+  Card,
+  StatCard,
+  Button,
+  Badge,
+  EmptyState,
+  tableWrap,
+  table,
+  th,
+  td,
+  tr,
+  input,
+} from '../../components/ui';
+import CoffeeLoader from '../../components/CoffeeLoader';
 
 const getFinalReport = (data) => {
   const report = data?.final_report ?? data?.report ?? data?.summary;
@@ -14,18 +31,20 @@ const getFinalReport = (data) => {
   return report && typeof report === 'object' ? JSON.stringify(report, null, 2) : '';
 };
 
-const getSessionMetrics = (session) => Object.entries(session)
-  .filter(([key, value]) => (
-    /(?:order|customer).*count|count.*(?:order|customer)/i.test(key)
-    && typeof value === 'number'
-  ));
+const getSessionMetrics = (session) =>
+  Object.entries(session).filter(
+    ([key, value]) =>
+      /(?:order|customer).*count|count.*(?:order|customer)/i.test(key) &&
+      typeof value === 'number'
+  );
 
-const getSessionDeliveryFields = (session) => Object.entries(session)
-  .filter(([key, value]) => (
-    (/telegram/i.test(key) || /announcement/i.test(key))
-    && /(announcement|delivery|sent|delivered|status)/i.test(key)
-    && (typeof value === 'string' || typeof value === 'boolean')
-  ));
+const getSessionDeliveryFields = (session) =>
+  Object.entries(session).filter(
+    ([key, value]) =>
+      (/telegram/i.test(key) || /announcement/i.test(key)) &&
+      /(announcement|delivery|sent|delivered|status)/i.test(key) &&
+      (typeof value === 'string' || typeof value === 'boolean')
+  );
 
 const getAnnouncementDeliveryFeedback = (responseData) => {
   if (!responseData || typeof responseData !== 'object') return null;
@@ -34,9 +53,10 @@ const getAnnouncementDeliveryFeedback = (responseData) => {
   if (fields.length === 0) return null;
 
   const fieldDetails = fields.map(([key, value]) => `${key}: ${String(value)}`).join(', ');
-  const deliveryFailed = fields.some(([, value]) => (
-    value === false || (typeof value === 'string' && /fail|error|undelivered/i.test(value))
-  ));
+  const deliveryFailed = fields.some(
+    ([, value]) =>
+      value === false || (typeof value === 'string' && /fail|error|undelivered/i.test(value))
+  );
 
   return {
     type: deliveryFailed ? 'failed' : 'reported',
@@ -46,9 +66,12 @@ const getAnnouncementDeliveryFeedback = (responseData) => {
   };
 };
 
-const formatBackendResponse = (data) => JSON.stringify(data, (key, value) => (
-  /token|secret|password/i.test(key) ? '[redacted]' : value
-), 2);
+const formatBackendResponse = (data) =>
+  JSON.stringify(
+    data,
+    (key, value) => (/token|secret|password/i.test(key) ? '[redacted]' : value),
+    2
+  );
 
 const INITIAL_NOW = Date.now();
 const MESSAGE_LIMIT = 4096;
@@ -71,9 +94,9 @@ export default function OrderSessionsPage() {
   const [title, setTitle] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
 
-  const fetchSessions = async () => {
+  const fetchSessions = async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError('');
       const response = await api.get('/admin/order-sessions');
       const sessionList = unwrapApiData(response);
@@ -93,13 +116,27 @@ export default function OrderSessionsPage() {
   };
 
   useEffect(() => {
-    const initialFetch = window.setTimeout(fetchSessions, 0);
+    const initialFetch = window.setTimeout(() => fetchSessions(), 0);
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => {
       window.clearTimeout(initialFetch);
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!showModal && !messageSession) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setShowModal(false);
+        setMessageSession(null);
+        setGroupMessage('');
+        setGroupMessageError('');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showModal, messageSession]);
 
   const handleCreateSession = async (event) => {
     event.preventDefault();
@@ -126,7 +163,7 @@ export default function OrderSessionsPage() {
       setExpiresAt('');
       setShowModal(false);
       setFeedback({ type: 'success', sessionMessage: 'Order session created as a draft.' });
-      await fetchSessions();
+      await fetchSessions({ silent: true });
     } catch (err) {
       setFormError(getApiErrorMessage(err, 'Failed to create the order session.'));
     } finally {
@@ -145,25 +182,30 @@ export default function OrderSessionsPage() {
       if (responseBody.success === false || responseBody.session_started === false) {
         throw new Error(responseBody.message || 'The backend did not confirm that the order session started.');
       }
-      const refreshedSessions = await fetchSessions();
+      const refreshedSessions = await fetchSessions({ silent: true });
       const refreshedSession = refreshedSessions?.find((session) => String(session.id) === String(id));
-      const sessionStarted = responseBody.session_started === true
-        && String(refreshedSession?.status || '').toUpperCase() === 'OPEN';
+      const sessionStarted =
+        responseBody.session_started === true &&
+        String(refreshedSession?.status || '').toUpperCase() === 'OPEN';
       const deliveryFeedback = getAnnouncementDeliveryFeedback(responseBody);
       const responseDetails = formatBackendResponse(responseBody);
       setFeedback({
-        type: sessionStarted
-          && deliveryFeedback?.type !== 'failed'
-          && responseBody.announcement_sent === true
-          ? 'success'
-          : 'warning',
+        type:
+          sessionStarted &&
+          deliveryFeedback?.type !== 'failed' &&
+          responseBody.announcement_sent === true
+            ? 'success'
+            : 'warning',
         sessionMessage: sessionStarted
-          ? (typeof responseBody.message === 'string' ? responseBody.message : 'Order session started successfully.')
-          : (typeof responseBody.message === 'string'
+          ? typeof responseBody.message === 'string'
             ? responseBody.message
-            : 'The start request was accepted, but the refreshed status does not confirm that the session is open.'),
-        deliveryMessage: deliveryFeedback?.message
-          || 'Telegram announcement delivery was not reported by the backend. Check the backend response and the group before retrying.',
+            : 'Order session started successfully.'
+          : typeof responseBody.message === 'string'
+          ? responseBody.message
+          : 'The start request was accepted, but the refreshed status does not confirm that the session is open.',
+        deliveryMessage:
+          deliveryFeedback?.message ||
+          'Telegram announcement delivery was not reported by the backend. Check the backend response and the group before retrying.',
         deliveryType: deliveryFeedback?.type,
         responseDetails,
       });
@@ -171,7 +213,7 @@ export default function OrderSessionsPage() {
       const requestMessage = getApiErrorMessage(err, 'Failed to start the order session.');
       const statusCode = err.response?.status;
       if (!err.response || statusCode >= 500) {
-        const refreshedSessions = await fetchSessions();
+        const refreshedSessions = await fetchSessions({ silent: true });
         const refreshedSession = refreshedSessions?.find((session) => String(session.id) === String(id));
         const reconciledStatus = refreshedSession
           ? String(refreshedSession.status || 'unknown').toUpperCase()
@@ -217,20 +259,23 @@ export default function OrderSessionsPage() {
         throw new Error(result.message || 'The backend did not confirm that the session closed.');
       }
 
-      const refreshedSessions = await fetchSessions();
+      const refreshedSessions = await fetchSessions({ silent: true });
       const refreshedSession = refreshedSessions?.find((item) => String(item.id) === String(session.id));
       setFinalReport(getFinalReport(result) || getFinalReport(refreshedSession));
-      const sessionClosed = result.success !== false && (
-        result.success === true
-        || String(result.status || '').toUpperCase() === 'CLOSED'
-        || String(refreshedSession?.status || '').toUpperCase() === 'CLOSED'
-      );
+      const sessionClosed =
+        result.success !== false &&
+        (result.success === true ||
+          String(result.status || '').toUpperCase() === 'CLOSED' ||
+          String(refreshedSession?.status || '').toUpperCase() === 'CLOSED');
       setFeedback({
         type: sessionClosed ? 'success' : 'warning',
         sessionMessage: sessionClosed
-          ? (typeof result.message === 'string' ? result.message : 'Order session closed successfully.')
+          ? typeof result.message === 'string'
+            ? result.message
+            : 'Order session closed successfully.'
           : 'The close request was accepted, but the refreshed status does not confirm that the session is closed.',
-        deliveryMessage: 'Telegram report delivery is not inferred from HTTP success. Check the backend response for its delivery result.',
+        deliveryMessage:
+          'Telegram report delivery is not inferred from HTTP success. Check the backend response for its delivery result.',
       });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to close the order session.'));
@@ -258,15 +303,15 @@ export default function OrderSessionsPage() {
       );
       const notifications = response.data?.telegram_notifications;
       if (
-        response.data?.delivered !== true
-        || !Array.isArray(notifications)
-        || notifications.length === 0
-        || notifications.some((notification) => notification.status !== 'sent')
+        response.data?.delivered !== true ||
+        !Array.isArray(notifications) ||
+        notifications.length === 0 ||
+        notifications.some((notification) => notification.status !== 'sent')
       ) {
         throw new Error(
-          response.data?.error
-          || response.data?.message
-          || 'The backend did not confirm that Telegram delivered the message.'
+          response.data?.error ||
+            response.data?.message ||
+            'The backend did not confirm that Telegram delivered the message.'
         );
       }
 
@@ -279,9 +324,9 @@ export default function OrderSessionsPage() {
     } catch (err) {
       console.error('Failed to send Telegram group message', err);
       setGroupMessageError(
-        err.response?.data?.error
-        || err.response?.data?.message
-        || getApiErrorMessage(err, 'The message was not confirmed as delivered.')
+        err.response?.data?.error ||
+          err.response?.data?.message ||
+          getApiErrorMessage(err, 'The message was not confirmed as delivered.')
       );
     } finally {
       setSendingGroupMessage(false);
@@ -291,77 +336,435 @@ export default function OrderSessionsPage() {
   const getStatusBadge = (status) => {
     switch (status) {
       case 'OPEN':
-        return <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">🟢 OPEN</span>;
+        return <Badge tone="green">Open</Badge>;
       case 'CLOSED':
-        return <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">🔴 CLOSED</span>;
+        return <Badge tone="red">Closed</Badge>;
       case 'EXPIRED':
-        return <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">⌛ EXPIRED</span>;
+        return <Badge tone="amber">Expired</Badge>;
       case 'DRAFT':
-        return <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-bold rounded-full">⏳ DRAFT</span>;
+        return <Badge tone="gray">Draft</Badge>;
       default:
-        return <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-bold rounded-full">{status}</span>;
+        return <Badge tone="gray">{status}</Badge>;
     }
   };
 
+  if (loading) {
+    return (
+      <CoffeeLoader
+        fullScreen={false}
+        title="Brewing order sessions"
+        message="Fetching active and scheduled ordering windows."
+      />
+    );
+  }
+
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto">
-      <div className="flex flex-wrap justify-between items-end gap-3 mb-6">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Cafe operations</p>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mt-1">Order sessions</h1>
-          <p className="text-sm text-gray-500 mt-1">Create ordering windows and manage their status.</p>
-        </div>
-        <button
-          onClick={() => { setFormError(''); setShowModal(true); }}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-lg text-sm shadow transition"
+    <div className="space-y-6">
+      <PageHeader
+        title="Order sessions"
+        description="Create ordering windows and manage session operations."
+      >
+        <Button
+          variant="primary"
+          icon="plus"
+          onClick={() => {
+            setFormError('');
+            setShowModal(true);
+          }}
+          className="min-h-[40px]"
         >
-          + Create New Session
-        </button>
-      </div>
+          Create session
+        </Button>
+      </PageHeader>
 
       {error && (
-        <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          <p>{error}</p>
-          <button onClick={fetchSessions} className="mt-2 font-semibold underline">Retry</button>
+        <div
+          role="alert"
+          className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex items-center gap-2.5">
+            <Icon name="close" size={18} className="shrink-0 text-rose-500" />
+            <p>{error}</p>
+          </div>
+          <Button
+            variant="secondary"
+            className="self-start sm:self-auto min-h-[36px] text-xs px-3 py-1.5"
+            onClick={() => fetchSessions()}
+          >
+            Retry
+          </Button>
         </div>
       )}
+
+      {feedback && (
+        <div
+          role="status"
+          className={`flex items-start justify-between rounded-xl border p-4 text-sm ${
+            feedback.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+              : 'border-amber-200 bg-amber-50 text-amber-900'
+          }`}
+        >
+          <div className="flex items-start gap-2.5">
+            <Icon
+              name={feedback.type === 'success' ? 'check' : 'filter'}
+              size={18}
+              className={`mt-0.5 shrink-0 ${
+                feedback.type === 'success' ? 'text-emerald-600' : 'text-amber-600'
+              }`}
+            />
+            <div>
+              <p className="font-semibold">{feedback.sessionMessage}</p>
+              {feedback.deliveryMessage && (
+                <p
+                  className={`mt-1 text-xs ${
+                    feedback.deliveryType === 'failed' ? 'font-semibold text-rose-700' : 'opacity-90'
+                  }`}
+                >
+                  {feedback.deliveryMessage}
+                </p>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFeedback(null)}
+            aria-label="Dismiss feedback"
+            className="rounded-lg p-1 text-stone-500 transition-colors hover:bg-black/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+          >
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+      )}
+
       {feedback?.responseDetails && (
-        <details className="mb-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
-          <summary className="cursor-pointer font-semibold text-gray-800">Backend response details</summary>
-          <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs text-gray-700">
+        <details className="rounded-2xl border border-stone-200 bg-white p-4 text-sm shadow-sm">
+          <summary className="cursor-pointer font-semibold text-stone-800">
+            Backend response details
+          </summary>
+          <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-stone-200 bg-stone-50 p-3 font-mono text-xs whitespace-pre-wrap break-words text-stone-700">
             {feedback.responseDetails}
           </pre>
         </details>
       )}
-      {feedback && (
-        <div role="status" className={`mb-4 rounded-lg border p-4 text-sm ${
-          feedback.type === 'success'
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-            : 'border-amber-200 bg-amber-50 text-amber-900'
-        }`}>
-          <p className="font-semibold">{feedback.sessionMessage}</p>
-          {feedback.deliveryMessage && (
-            <p className={`mt-1 ${feedback.deliveryType === 'failed' ? 'font-semibold' : ''}`}>
-              {feedback.deliveryMessage}
-            </p>
-          )}
-        </div>
-      )}
+
       {finalReport && (
-        <section className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="font-bold text-gray-800 mb-2">Final order report returned by the backend</h2>
-          <pre className="whitespace-pre-wrap break-words text-sm text-gray-700">{finalReport}</pre>
-        </section>
+        <Card title="Final order report returned by backend">
+          <pre className="max-h-80 overflow-auto rounded-lg border border-stone-200 bg-stone-50 p-3 font-mono text-xs whitespace-pre-wrap break-words text-stone-700">
+            {finalReport}
+          </pre>
+        </Card>
       )}
 
+      {/* Metrics overview */}
+      <section aria-label="Session overview" className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard
+          label="Total sessions"
+          value={sessions.length}
+          hint="All registered sessions"
+          icon="clock"
+          tone="blue"
+        />
+        <StatCard
+          label="Open sessions"
+          value={sessions.filter((s) => getSessionStatus(s, now) === 'OPEN').length}
+          hint="Accepting customer orders"
+          icon="trendUp"
+          tone="green"
+        />
+        <StatCard
+          label="Draft sessions"
+          value={sessions.filter((s) => getSessionStatus(s, now) === 'DRAFT').length}
+          hint="Ready to be started"
+          icon="inbox"
+          tone="amber"
+        />
+        <StatCard
+          label="Completed"
+          value={sessions.filter((s) => ['CLOSED', 'EXPIRED'].includes(getSessionStatus(s, now))).length}
+          hint="Closed or expired"
+          icon="receipt"
+          tone="rose"
+        />
+      </section>
+
+      {/* Sessions List */}
+      <Card padded={false}>
+        {!error && sessions.length === 0 ? (
+          <EmptyState
+            icon="clock"
+            title="No order sessions"
+            description="No ordering sessions have been created yet."
+            action={
+              <Button
+                variant="primary"
+                icon="plus"
+                onClick={() => {
+                  setFormError('');
+                  setShowModal(true);
+                }}
+                className="min-h-[40px]"
+              >
+                Create session
+              </Button>
+            }
+          />
+        ) : (
+          <>
+            {/* Mobile Card Grid */}
+            <div className="divide-y divide-stone-100 md:hidden">
+              {sessions.map((session) => {
+                const status = getSessionStatus(session, now);
+                return (
+                  <div key={session.id} className="space-y-3 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h3 className="font-bold text-stone-900">{session.title}</h3>
+                        {session.order_number && (
+                          <span className="mt-1 inline-block rounded bg-stone-100 px-2 py-0.5 font-mono text-xs font-semibold text-stone-700">
+                            #{session.order_number}
+                          </span>
+                        )}
+                      </div>
+                      {getStatusBadge(status)}
+                    </div>
+
+                    <div className="space-y-1 rounded-xl bg-stone-50/70 p-3 text-xs text-stone-600">
+                      <div>
+                        Started:{' '}
+                        <span className="font-medium text-stone-800">
+                          {formatDateTime(session.started_at)}
+                        </span>
+                      </div>
+                      <div>
+                        Expires:{' '}
+                        <span className="font-medium text-stone-800">
+                          {formatDateTime(session.expires_at)}
+                        </span>
+                      </div>
+                      {getSessionMetrics(session).map(([key, value]) => (
+                        <div key={key}>
+                          {key.replaceAll('_', ' ')}:{' '}
+                          <span className="font-medium text-stone-800">{value}</span>
+                        </div>
+                      ))}
+                      {getSessionDeliveryFields(session).map(([key, value]) => (
+                        <div key={key}>
+                          {key.replaceAll('_', ' ')}:{' '}
+                          <span className="font-medium text-stone-800">{String(value)}</span>
+                        </div>
+                      ))}
+                      {status === 'OPEN' && (
+                        <div className="font-semibold text-emerald-700">
+                          Remaining: {formatRemainingTime(session.expires_at, now)}
+                        </div>
+                      )}
+                      {session.closed_at && (
+                        <div>
+                          Closed:{' '}
+                          <span className="font-medium text-stone-800">
+                            {formatDateTime(session.closed_at)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-3">
+                      <Button
+                        variant="secondary"
+                        icon="message"
+                        onClick={() => {
+                          setGroupMessage('');
+                          setGroupMessageError('');
+                          setMessageSession(session);
+                        }}
+                        disabled={actionId !== null || sendingGroupMessage}
+                        className="min-h-[36px] text-xs"
+                      >
+                        Message group
+                      </Button>
+
+                      {status === 'DRAFT' && (
+                        <Button
+                          variant="accent"
+                          onClick={() => handleStartSession(session.id)}
+                          disabled={actionId !== null}
+                          className="min-h-[36px] text-xs"
+                        >
+                          {actionId === session.id ? 'Starting…' : 'Start session'}
+                        </Button>
+                      )}
+                      {status === 'OPEN' && (
+                        <Button
+                          variant="danger"
+                          onClick={() => handleCloseSession(session)}
+                          disabled={actionId !== null}
+                          className="min-h-[36px] text-xs"
+                        >
+                          {actionId === session.id ? 'Ending…' : 'End session'}
+                        </Button>
+                      )}
+                      {(status === 'CLOSED' || status === 'EXPIRED') && (
+                        <span className="text-xs font-medium text-stone-400">Completed</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop Table */}
+            <div className={`hidden md:block ${tableWrap}`}>
+              <table className={table}>
+                <thead>
+                  <tr>
+                    <th className={th}>Session</th>
+                    <th className={th}>Order number</th>
+                    <th className={th}>Status</th>
+                    <th className={th}>Schedule & metrics</th>
+                    <th className={`${th} text-right`}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100">
+                  {sessions.map((session) => {
+                    const status = getSessionStatus(session, now);
+                    return (
+                      <tr key={session.id} className={tr}>
+                        <td className={td}>
+                          <div className="font-bold text-stone-900">{session.title}</div>
+                          <Button
+                            variant="secondary"
+                            icon="message"
+                            onClick={() => {
+                              setGroupMessage('');
+                              setGroupMessageError('');
+                              setMessageSession(session);
+                            }}
+                            disabled={actionId !== null || sendingGroupMessage}
+                            className="mt-2 min-h-[32px] px-2.5 py-1 text-xs"
+                          >
+                            Message group
+                          </Button>
+                        </td>
+                        <td className={td}>
+                          {session.order_number ? (
+                            <span className="rounded bg-stone-100 px-2 py-0.5 font-mono text-xs font-semibold text-stone-700">
+                              #{session.order_number}
+                            </span>
+                          ) : (
+                            <span className="text-stone-400">—</span>
+                          )}
+                        </td>
+                        <td className={td}>{getStatusBadge(status)}</td>
+                        <td className={`${td} space-y-1 text-xs text-stone-600`}>
+                          <div>
+                            Started:{' '}
+                            <span className="font-medium text-stone-800">
+                              {formatDateTime(session.started_at)}
+                            </span>
+                          </div>
+                          <div>
+                            Expires:{' '}
+                            <span className="font-medium text-stone-800">
+                              {formatDateTime(session.expires_at)}
+                            </span>
+                          </div>
+                          {getSessionMetrics(session).map(([key, value]) => (
+                            <div key={key}>
+                              {key.replaceAll('_', ' ')}:{' '}
+                              <span className="font-medium text-stone-800">{value}</span>
+                            </div>
+                          ))}
+                          {getSessionDeliveryFields(session).map(([key, value]) => (
+                            <div key={key}>
+                              {key.replaceAll('_', ' ')}:{' '}
+                              <span className="font-medium text-stone-800">{String(value)}</span>
+                            </div>
+                          ))}
+                          {status === 'OPEN' && (
+                            <div className="font-semibold text-emerald-700">
+                              Remaining: {formatRemainingTime(session.expires_at, now)}
+                            </div>
+                          )}
+                          {session.closed_at && (
+                            <div>
+                              Closed:{' '}
+                              <span className="font-medium text-stone-800">
+                                {formatDateTime(session.closed_at)}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                        <td className={`${td} space-x-2 text-right`}>
+                          {status === 'DRAFT' && (
+                            <Button
+                              variant="accent"
+                              onClick={() => handleStartSession(session.id)}
+                              disabled={actionId !== null}
+                              className="min-h-[36px] px-3 py-1.5 text-xs"
+                            >
+                              {actionId === session.id ? 'Starting…' : 'Start session'}
+                            </Button>
+                          )}
+                          {status === 'OPEN' && (
+                            <Button
+                              variant="danger"
+                              onClick={() => handleCloseSession(session)}
+                              disabled={actionId !== null}
+                              className="min-h-[36px] px-3 py-1.5 text-xs"
+                            >
+                              {actionId === session.id ? 'Ending…' : 'End session'}
+                            </Button>
+                          )}
+                          {(status === 'CLOSED' || status === 'EXPIRED') && (
+                            <span className="text-xs font-medium text-stone-400">Completed</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </Card>
+
+      {/* Create Session Dialog / Bottom Sheet */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-lg">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">Create Order Session</h3>
-            {formError && <p role="alert" className="mb-4 text-sm text-red-700">{formError}</p>}
-            <form onSubmit={handleCreateSession}>
-              <div className="mb-4">
-                <label htmlFor="session-title" className="block text-xs font-semibold text-gray-500 mb-1">Session Title</label>
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowModal(false);
+          }}
+        >
+          <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-stone-200 bg-white p-5 shadow-xl sm:max-w-md sm:rounded-2xl sm:p-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-stone-900">Create order session</h2>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                aria-label="Close dialog"
+                className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+              >
+                <Icon name="close" size={18} />
+              </button>
+            </div>
+
+            {formError && (
+              <div
+                role="alert"
+                className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700"
+              >
+                {formError}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateSession} className="mt-4 space-y-4">
+              <div>
+                <label htmlFor="session-title" className="block text-sm font-medium text-stone-700">
+                  Session title
+                </label>
                 <input
                   id="session-title"
                   type="text"
@@ -369,67 +772,103 @@ export default function OrderSessionsPage() {
                   maxLength={255}
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
-                  placeholder="Lunch Order"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                  placeholder="Lunch order"
+                  className={`${input} mt-1`}
                 />
               </div>
-              <div className="mb-4">
-                <label htmlFor="session-expiration" className="block text-xs font-semibold text-gray-500 mb-1">Expiration Date and Time</label>
+
+              <div>
+                <label
+                  htmlFor="session-expiration"
+                  className="block text-sm font-medium text-stone-700"
+                >
+                  Expiration date and time
+                </label>
                 <input
                   id="session-expiration"
                   type="datetime-local"
                   required
                   value={expiresAt}
                   onChange={(event) => setExpiresAt(event.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                  className={`${input} mt-1`}
                 />
               </div>
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
+
+              <div className="mt-6 flex justify-end gap-2.5">
+                <Button
+                  variant="secondary"
                   disabled={submitting}
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-gray-600 text-sm font-semibold hover:bg-gray-100 rounded-lg disabled:opacity-50"
                 >
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow disabled:opacity-50"
-                >
-                  {submitting ? 'Saving...' : 'Save Session'}
-                </button>
+                </Button>
+                <Button type="submit" variant="primary" disabled={submitting}>
+                  {submitting ? 'Saving…' : 'Save session'}
+                </Button>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* Telegram Group Message Dialog / Bottom Sheet */}
       {messageSession && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setMessageSession(null);
+              setGroupMessage('');
+              setGroupMessageError('');
+            }
+          }}
+        >
           <section
             role="dialog"
             aria-modal="true"
             aria-labelledby="session-message-title"
-            className="my-4 w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl"
+            className="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-stone-200 bg-white p-5 shadow-xl sm:max-w-lg sm:rounded-2xl sm:p-6"
           >
-            <div className="mb-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Telegram group</p>
-              <h2 id="session-message-title" className="mt-1 text-lg font-bold text-gray-900">
-                Message group — {messageSession.title}
-              </h2>
-              <p className="mt-1 text-sm text-gray-500">
-                This message will be sent directly to the configured Telegram group.
-              </p>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#ef5a3c]">
+                  Telegram group
+                </p>
+                <h2 id="session-message-title" className="mt-1 text-lg font-bold text-stone-900">
+                  Message group — {messageSession.title}
+                </h2>
+                <p className="mt-1 text-xs text-stone-500">
+                  This message will be sent directly to the configured Telegram group.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setMessageSession(null);
+                  setGroupMessage('');
+                  setGroupMessageError('');
+                }}
+                aria-label="Close dialog"
+                className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+              >
+                <Icon name="close" size={18} />
+              </button>
             </div>
+
             {groupMessageError && (
-              <p role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <div
+                role="alert"
+                className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700"
+              >
                 {groupMessageError}
-              </p>
+              </div>
             )}
-            <form onSubmit={handleSendGroupMessage}>
-              <label htmlFor="session-group-message" className="mb-1 block text-sm font-semibold text-gray-700">
+
+            <form onSubmit={handleSendGroupMessage} className="mt-4">
+              <label
+                htmlFor="session-group-message"
+                className="block text-sm font-medium text-stone-700"
+              >
                 Message
               </label>
               <textarea
@@ -439,137 +878,40 @@ export default function OrderSessionsPage() {
                 rows={5}
                 value={groupMessage}
                 onChange={(event) => setGroupMessage(event.target.value)}
-                placeholder="Write your message..."
-                className="w-full resize-y rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                placeholder="Write your message…"
+                className={`${input} mt-1 resize-y`}
               />
-              <p className="mt-1 text-right text-xs text-gray-500">
-                {groupMessage.length}/{MESSAGE_LIMIT}
-              </p>
-              <div className="mt-4 flex justify-end gap-3">
-                <button
-                  type="button"
+              <div className="mt-1 flex justify-between text-xs text-stone-400">
+                <span>Markdown formatting supported by Telegram</span>
+                <span>
+                  {groupMessage.length}/{MESSAGE_LIMIT}
+                </span>
+              </div>
+
+              <div className="mt-5 flex justify-end gap-2.5">
+                <Button
+                  variant="secondary"
                   disabled={sendingGroupMessage}
                   onClick={() => {
                     setMessageSession(null);
                     setGroupMessage('');
                     setGroupMessageError('');
                   }}
-                  className="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
+                  variant="primary"
                   disabled={sendingGroupMessage || !groupMessage.trim()}
-                  className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {sendingGroupMessage ? 'Sending...' : 'Send Message'}
-                </button>
+                  {sendingGroupMessage ? 'Sending…' : 'Send message'}
+                </Button>
               </div>
             </form>
           </section>
         </div>
       )}
-
-      <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5" aria-label="Session overview">
-        {[
-          ['Loaded sessions', sessions.length],
-          ['Draft', sessions.filter((session) => getSessionStatus(session, now) === 'DRAFT').length],
-          ['Open', sessions.filter((session) => getSessionStatus(session, now) === 'OPEN').length],
-          ['Closed / expired', sessions.filter((session) => ['CLOSED', 'EXPIRED'].includes(getSessionStatus(session, now))).length],
-        ].map(([label, value]) => (
-          <div key={label} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium text-gray-500">{label}</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">{value}</p>
-          </div>
-        ))}
-      </section>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
-        {loading ? (
-          <p className="p-6 text-gray-500 text-center">Loading sessions...</p>
-        ) : (
-          <table className="w-full min-w-[850px] text-left border-collapse">
-            <thead>
-              <tr className="border-b border-gray-200 text-xs uppercase text-gray-500 font-semibold bg-gray-50">
-                <th className="p-4">Session</th>
-                <th className="p-4">Order Number</th>
-                <th className="p-4">Status</th>
-                <th className="p-4">Schedule</th>
-                <th className="p-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 text-sm">
-              {sessions.map((session) => {
-                const status = getSessionStatus(session, now);
-                return (
-                  <tr key={session.id} className="hover:bg-gray-50">
-                    <td className="p-4 font-semibold text-gray-800">
-                      <div>{session.title}</div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setGroupMessage('');
-                          setGroupMessageError('');
-                          setMessageSession(session);
-                        }}
-                        disabled={actionId !== null || sendingGroupMessage}
-                        className="mt-2 rounded-lg bg-sky-700 px-3 py-1.5 text-xs font-semibold text-white shadow transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Message Group
-                      </button>
-                    </td>
-                    <td className="p-4 font-mono text-gray-600">{session.order_number || '—'}</td>
-                    <td className="p-4">{getStatusBadge(status)}</td>
-                    <td className="p-4 text-gray-600">
-                      <div>Started: {formatDateTime(session.started_at)}</div>
-                      <div>Expires: <span className="font-medium text-gray-800">{formatDateTime(session.expires_at)}</span></div>
-                      {getSessionMetrics(session).map(([key, value]) => (
-                        <div key={key}>{key.replaceAll('_', ' ')}: <span className="font-medium text-gray-800">{value}</span></div>
-                      ))}
-                      {getSessionDeliveryFields(session).map(([key, value]) => (
-                        <div key={key}>{key.replaceAll('_', ' ')}: <span className="font-medium text-gray-800">{String(value)}</span></div>
-                      ))}
-                      {status === 'OPEN' && (
-                        <div className="font-semibold text-emerald-700">
-                          Remaining: {formatRemainingTime(session.expires_at, now)}
-                        </div>
-                      )}
-                      {session.closed_at && <div>Closed: {formatDateTime(session.closed_at)}</div>}
-                    </td>
-                    <td className="p-4 text-right space-x-2">
-                      {status === 'DRAFT' && (
-                        <button
-                          onClick={() => handleStartSession(session.id)}
-                          disabled={actionId !== null}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg text-xs shadow transition disabled:opacity-50"
-                        >
-                          {actionId === session.id ? 'Starting...' : '🚀 Start Session'}
-                        </button>
-                      )}
-                      {status === 'OPEN' && (
-                        <button
-                          onClick={() => handleCloseSession(session)}
-                          disabled={actionId !== null}
-                          className="bg-red-600 hover:bg-red-700 text-white font-medium px-3 py-1.5 rounded-lg text-xs shadow transition disabled:opacity-50"
-                        >
-                          {actionId === session.id ? 'Ending...' : '🛑 End Order'}
-                        </button>
-                      )}
-                      {(status === 'CLOSED' || status === 'EXPIRED') && (
-                        <span className="text-xs text-gray-400 font-medium italic">Completed</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {!error && sessions.length === 0 && (
-                <tr><td colSpan="5" className="p-8 text-center text-gray-500">No order sessions created yet.</td></tr>
-              )}
-            </tbody>
-          </table>
-        )}
-      </div>
     </div>
   );
 }

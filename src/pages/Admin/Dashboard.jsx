@@ -1,19 +1,23 @@
 // src/pages/Admin/Dashboard.jsx
 import React, { useEffect, useState } from 'react';
-import api from '../../api/axios'; // Axios client with bearer auth
+import { useNavigate } from 'react-router-dom';
+import api from '../../api/axios';
 import { getApiErrorMessage } from '../../api/errors';
 import { formatDateTime, unwrapApiData } from '../../utils/orderSession';
+import { Icon, PageHeader, Card, StatCard, Button, Badge, EmptyState } from '../../components/ui';
+import CoffeeLoader from '../../components/CoffeeLoader';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [closing, setClosing] = useState(false);
 
-  const fetchDashboard = async () => {
+  const fetchDashboard = async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError('');
       const res = await api.get('/admin/dashboard');
       if (!res.data || typeof res.data !== 'object' || Array.isArray(res.data)) {
@@ -30,7 +34,7 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    const initialFetch = window.setTimeout(fetchDashboard, 0);
+    const initialFetch = window.setTimeout(() => fetchDashboard(), 0);
     return () => window.clearTimeout(initialFetch);
   }, []);
 
@@ -67,7 +71,7 @@ export default function Dashboard() {
           ? ' Telegram report delivery failed; check the bot configuration and group permissions.'
           : ' The API did not confirm Telegram report delivery.';
       setNotice(`Session closed.${deliveryMessage}`);
-      await fetchDashboard();
+      await fetchDashboard({ silent: true });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to close session.'));
     } finally {
@@ -75,70 +79,160 @@ export default function Dashboard() {
     }
   };
 
-  if (loading) return <div className="p-4 text-gray-500">Loading metrics...</div>;
+  if (loading) {
+    return (
+      <CoffeeLoader
+        fullScreen={false}
+        title="Brewing your metrics"
+        message="Fetching today's sales and active session overview."
+      />
+    );
+  }
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Overview Dashboard</h1>
+    <div className="space-y-6">
+      <PageHeader
+        title="Dashboard"
+        description="Overview of today's sales, customer orders, and active sessions."
+      >
+        <Button
+          variant="secondary"
+          icon="clock"
+          onClick={() => navigate('/admin/sessions')}
+          className="min-h-[40px]"
+        >
+          Order sessions
+        </Button>
+      </PageHeader>
 
       {error && (
-        <div role="alert" className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          <p>{error}</p>
-          <button onClick={fetchDashboard} className="mt-2 font-semibold underline">Retry</button>
+        <div
+          role="alert"
+          className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex items-center gap-2.5">
+            <Icon name="close" size={18} className="shrink-0 text-rose-500" />
+            <p>{error}</p>
+          </div>
+          <Button
+            variant="secondary"
+            className="self-start sm:self-auto min-h-[36px] text-xs px-3 py-1.5"
+            onClick={() => fetchDashboard()}
+          >
+            Retry
+          </Button>
         </div>
       )}
-      {notice && <div role="status" className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</div>}
+
+      {notice && (
+        <div
+          role="status"
+          className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"
+        >
+          <div className="flex items-center gap-2.5">
+            <Icon name="check" size={18} className="shrink-0 text-emerald-600" />
+            <p>{notice}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setNotice('')}
+            aria-label="Dismiss notice"
+            className="rounded-lg p-1 text-emerald-700 transition-colors hover:bg-emerald-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+          >
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+      )}
 
       {stats && (
-      <>
-      {/* Metric Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <p className="text-sm font-medium text-gray-500">Today's Orders</p>
-          <p className="text-3xl font-bold text-gray-900 mt-2">{stats?.today_orders || 0}</p>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <p className="text-sm font-medium text-gray-500">Today's Customers</p>
-          <p className="text-3xl font-bold text-gray-900 mt-2">{stats?.today_customers || 0}</p>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <p className="text-sm font-medium text-gray-500">Today's Revenue</p>
-          <p className="text-3xl font-bold text-emerald-600 mt-2">${Number(stats?.today_revenue || 0).toFixed(2)}</p>
-        </div>
-      </div>
-
-      {/* Active Order Session Panel */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
-        <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-          <span>🟢 Active Order Session</span>
-        </h3>
-
-        {stats?.active_session ? (
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <h4 className="text-xl font-bold text-slate-800">{stats.active_session.title}</h4>
-              <p className="text-sm text-gray-500 mt-1">Session Number: <span className="font-mono font-medium text-slate-700">{stats.active_session.order_number}</span></p>
-              <p className="text-sm text-gray-500 mt-0.5">Started At: {formatDateTime(stats.active_session.started_at)}</p>
-              <p className="text-sm text-gray-500 mt-0.5">Expires At: {formatDateTime(stats.active_session.expires_at)}</p>
-            </div>
-            <button
-              onClick={() => handleCloseSession(stats.active_session.id)}
-              disabled={closing}
-              className="bg-red-600 hover:bg-red-700 text-white font-semibold px-5 py-2.5 rounded-lg shadow transition disabled:opacity-50"
-            >
-              {closing ? 'Ending Order...' : 'End Order'}
-            </button>
+        <>
+          {/* Metric Cards */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-6 lg:grid-cols-3">
+            <StatCard
+              label="Today's orders"
+              value={stats?.today_orders || 0}
+              hint="Total orders placed today"
+              icon="receipt"
+              tone="blue"
+            />
+            <StatCard
+              label="Today's customers"
+              value={stats?.today_customers || 0}
+              hint="Unique customers today"
+              icon="users"
+              tone="amber"
+            />
+            <StatCard
+              label="Today's revenue"
+              value={`$${Number(stats?.today_revenue || 0).toFixed(2)}`}
+              hint="Gross earnings today"
+              icon="coins"
+              tone="green"
+            />
           </div>
-        ) : (
-          <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-            <p className="text-gray-500">No active session running right now.</p>
-            <a href="/admin/sessions" className="text-emerald-600 font-semibold text-sm mt-2 inline-block hover:underline">
-              + Go to Order Sessions to start a new one
-            </a>
-          </div>
-        )}
-      </div>
-      </>
+
+          {/* Active Order Session Panel */}
+          <Card
+            title="Active order session"
+            action={
+              stats?.active_session ? (
+                <Badge tone="green">Active</Badge>
+              ) : (
+                <Badge tone="gray">Inactive</Badge>
+              )
+            }
+          >
+            {stats?.active_session ? (
+              <div className="flex flex-col gap-4 rounded-xl border border-stone-200 bg-stone-50/70 p-4 sm:p-5 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-bold text-stone-900">
+                      {stats.active_session.title}
+                    </h3>
+                    {stats.active_session.order_number && (
+                      <span className="rounded bg-stone-200/80 px-2 py-0.5 font-mono text-xs font-semibold text-stone-700">
+                        #{stats.active_session.order_number}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-500">
+                    <span>
+                      Started: <strong className="font-medium text-stone-700">{formatDateTime(stats.active_session.started_at)}</strong>
+                    </span>
+                    <span>
+                      Expires: <strong className="font-medium text-stone-700">{formatDateTime(stats.active_session.expires_at)}</strong>
+                    </span>
+                  </div>
+                </div>
+
+                <Button
+                  variant="danger"
+                  onClick={() => handleCloseSession(stats.active_session.id)}
+                  disabled={closing}
+                  className="min-h-[40px] shrink-0 self-start md:self-center"
+                >
+                  {closing ? 'Ending session…' : 'End session'}
+                </Button>
+              </div>
+            ) : (
+              <EmptyState
+                icon="clock"
+                title="No active order session"
+                description="There is no active session taking orders right now."
+                action={
+                  <Button
+                    variant="primary"
+                    icon="plus"
+                    onClick={() => navigate('/admin/sessions')}
+                    className="min-h-[40px]"
+                  >
+                    Start new session
+                  </Button>
+                }
+              />
+            )}
+          </Card>
+        </>
       )}
     </div>
   );

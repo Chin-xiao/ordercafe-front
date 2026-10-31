@@ -1,14 +1,27 @@
+// src/pages/Admin/ReportsPage.jsx
 import React, { useEffect, useState } from 'react';
 import api from '../../api/axios';
 import { getApiErrorMessage } from '../../api/errors';
 import { formatRiel } from '../../utils/currency';
 import { unwrapApiData } from '../../utils/orderSession';
+import {
+  Icon,
+  PageHeader,
+  Card,
+  StatCard,
+  Button,
+  Badge,
+  EmptyState,
+  tableWrap,
+  table,
+  th,
+  td,
+  tr,
+  input,
+} from '../../components/ui';
+import CoffeeLoader from '../../components/CoffeeLoader';
 
 const PAGE_SIZE = 15;
-
-const inputClass = 'w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-800 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-100';
-const secondaryButtonClass = 'rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60';
-const primaryButtonClass = 'rounded-lg bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-wait disabled:opacity-60';
 
 const getPagination = (response) => ({
   currentPage: Number(response?.current_page) || 1,
@@ -40,91 +53,117 @@ function Pagination({ page, lastPage, total, loading, onChange }) {
   if (total === 0) return null;
 
   return (
-    <nav aria-label="Order report pagination" className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-4 py-3 text-sm">
-      <p className="text-gray-500">Page {page} of {lastPage} · {total} orders</p>
+    <nav
+      aria-label="Order report pagination"
+      className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-100 px-5 py-3.5 text-sm"
+    >
+      <p className="text-xs text-stone-500">
+        Page {page} of {lastPage} · {total} orders
+      </p>
       <div className="flex gap-2">
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={() => onChange(page - 1)}
           disabled={loading || page <= 1}
-          className={secondaryButtonClass}
+          className="min-h-[36px] px-3 py-1.5 text-xs"
         >
           Previous
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="secondary"
           onClick={() => onChange(page + 1)}
           disabled={loading || page >= lastPage}
-          className={secondaryButtonClass}
+          className="min-h-[36px] px-3 py-1.5 text-xs"
         >
           Next
-        </button>
+        </Button>
       </div>
     </nav>
   );
 }
 
 function OrderCard({ order, timeZone }) {
-  const customerName = order.customer_name
-    || [order.first_name, order.last_name].filter(Boolean).join(' ')
-    || 'Name not available';
+  const customerName =
+    order.customer_name ||
+    [order.first_name, order.last_name].filter(Boolean).join(' ') ||
+    'Name not available';
+
+  const statusTone =
+    order.status === 'submitted' ? 'green' : order.status === 'cancelled' ? 'red' : 'gray';
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-      <header className="flex flex-col gap-3 border-b border-gray-100 bg-stone-50 p-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
+    <article className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">
+      <header className="flex flex-col gap-3 border-b border-stone-100 bg-stone-50/60 p-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
         <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Customer</p>
-          <h2 className="text-base font-bold text-gray-900">{customerName}</h2>
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[#ef5a3c]">Customer</p>
+          <h2 className="text-base font-bold text-stone-900">{customerName}</h2>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-stone-500">
             <span>Telegram ID: {order.telegram_user_id ?? '—'}</span>
-            {order.telegram_username && <span>{order.telegram_username}</span>}
+            {order.telegram_username && <span>@{order.telegram_username.replace(/^@/, '')}</span>}
           </div>
         </div>
-        <div className="text-xs text-gray-600 sm:text-right">
-          <p><span className="font-semibold text-gray-800">Order time:</span> {formatOrderTime(order.ordered_at, timeZone)}</p>
-          <p className="mt-1"><span className="font-semibold text-gray-800">Session:</span> {order.session_name || '—'}</p>
-          <p className="mt-1 flex items-center gap-2 sm:justify-end">
-            <span className="font-mono text-gray-500">{order.order_number || `#${order.id}`}</span>
-            <span className="rounded-full bg-gray-200 px-2 py-0.5 font-semibold capitalize text-gray-700">{order.status}</span>
-          </p>
+        <div className="space-y-1 text-xs text-stone-600 sm:text-right">
+          <div>
+            <span className="font-semibold text-stone-800">Order time:</span>{' '}
+            {formatOrderTime(order.ordered_at, timeZone)}
+          </div>
+          <div>
+            <span className="font-semibold text-stone-800">Session:</span>{' '}
+            {order.session_name || '—'}
+          </div>
+          <div className="flex items-center gap-2 sm:justify-end">
+            <span className="font-mono text-xs text-stone-500">
+              {order.order_number || `#${order.id}`}
+            </span>
+            <Badge tone={statusTone}>{order.status}</Badge>
+          </div>
         </div>
       </header>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-left text-sm">
-          <thead className="bg-white text-xs uppercase tracking-wide text-gray-500">
+      <div className={tableWrap}>
+        <table className={table}>
+          <thead>
             <tr>
-              <th scope="col" className="px-4 py-3 font-semibold sm:px-5">Drink</th>
-              <th scope="col" className="px-3 py-3 font-semibold">Sugar</th>
-              <th scope="col" className="px-3 py-3 text-center font-semibold">Qty</th>
-              <th scope="col" className="px-3 py-3 text-right font-semibold">Unit price</th>
-              <th scope="col" className="px-4 py-3 text-right font-semibold sm:px-5">Subtotal</th>
+              <th scope="col" className={th}>Drink</th>
+              <th scope="col" className={th}>Sugar</th>
+              <th scope="col" className={`${th} text-center`}>Qty</th>
+              <th scope="col" className={`${th} text-right`}>Unit price</th>
+              <th scope="col" className={`${th} text-right`}>Subtotal</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-stone-100">
             {(order.items || []).map((item, index) => (
-              <tr key={`${item.product_id || item.product_name}-${item.sugar_percent}-${index}`}>
-                <td className="px-4 py-3 font-medium text-gray-900 sm:px-5">{item.product_name}</td>
-                <td className="px-3 py-3 text-gray-700">
-                  {item.sugar_percent === null || item.sugar_percent === undefined ? '—' : `${item.sugar_percent}%`}
+              <tr
+                key={`${item.product_id || item.product_name}-${item.sugar_percent}-${index}`}
+                className={tr}
+              >
+                <td className={`${td} font-medium text-stone-900`}>{item.product_name}</td>
+                <td className={td}>
+                  {item.sugar_percent === null || item.sugar_percent === undefined
+                    ? '—'
+                    : `${item.sugar_percent}%`}
                 </td>
-                <td className="px-3 py-3 text-center text-gray-700">{item.quantity}</td>
-                <td className="px-3 py-3 text-right text-gray-700">{formatRiel(item.unit_price)}</td>
-                <td className="px-4 py-3 text-right font-semibold text-gray-900 sm:px-5">{formatRiel(item.subtotal)}</td>
+                <td className={`${td} text-center text-stone-700`}>{item.quantity}</td>
+                <td className={`${td} text-right text-stone-700`}>{formatRiel(item.unit_price)}</td>
+                <td className={`${td} text-right font-semibold text-stone-900`}>
+                  {formatRiel(item.subtotal)}
+                </td>
               </tr>
             ))}
             {(!order.items || order.items.length === 0) && (
               <tr>
-                <td colSpan="5" className="px-5 py-5 text-center text-sm text-gray-500">No item details were returned for this order.</td>
+                <td colSpan="5" className="px-5 py-5 text-center text-sm text-stone-500">
+                  No item details were returned for this order.
+                </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
 
-      <footer className="flex items-center justify-between border-t border-gray-100 px-4 py-3 text-sm sm:px-5">
-        <span className="font-bold text-gray-800">Order total</span>
-        <span className="text-base font-bold text-emerald-700">{formatRiel(order.total_amount)}</span>
+      <footer className="flex items-center justify-between border-t border-stone-100 px-4 py-3 text-sm sm:px-5">
+        <span className="font-bold text-stone-800">Order total</span>
+        <span className="text-base font-bold text-stone-900">{formatRiel(order.total_amount)}</span>
       </footer>
     </article>
   );
@@ -244,7 +283,7 @@ export default function ReportsPage() {
         }
         const nextPagination = getPagination(result);
         if (query.page > nextPagination.lastPage) {
-          setQuery((current) => current && ({ ...current, page: nextPagination.lastPage }));
+          setQuery((current) => current && { ...current, page: nextPagination.lastPage });
           return;
         }
         setOrders(result.data);
@@ -340,207 +379,352 @@ export default function ReportsPage() {
     });
   };
 
-  return (
-    <main className="mx-auto max-w-7xl space-y-6">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Cafe analytics</p>
-        <h1 className="mt-1 text-2xl font-bold text-gray-900 md:text-3xl">Daily order report</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Customer orders and saved item prices, filtered by the business timezone ({timeZone}).
-        </p>
-      </header>
+  if (initializing) {
+    return (
+      <CoffeeLoader
+        fullScreen={false}
+        title="Brewing sales reports"
+        message="Fetching sales metrics and daily orders."
+      />
+    );
+  }
 
-      <form
-        onSubmit={applyFilters}
-        className="grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-6 lg:items-end"
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Sales reports"
+        description={`Customer orders and performance metrics, filtered by business timezone (${timeZone}).`}
       >
-        <div>
-          <label htmlFor="report-date-from" className="mb-1 block text-xs font-semibold text-gray-600">From date</label>
-          <input
-            id="report-date-from"
-            type="date"
-            value={dateFrom}
-            max={dateTo || undefined}
-            onChange={(event) => setDateFrom(event.target.value)}
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label htmlFor="report-date-to" className="mb-1 block text-xs font-semibold text-gray-600">To date</label>
-          <input
-            id="report-date-to"
-            type="date"
-            value={dateTo}
-            min={dateFrom || undefined}
-            onChange={(event) => setDateTo(event.target.value)}
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label htmlFor="report-customer-search" className="mb-1 block text-xs font-semibold text-gray-600">Customer search</label>
-          <input
-            id="report-customer-search"
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Name, username, Telegram ID"
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label htmlFor="report-session" className="mb-1 block text-xs font-semibold text-gray-600">Session</label>
-          <select
-            id="report-session"
-            value={sessionId}
-            onChange={(event) => setSessionId(event.target.value)}
-            disabled={Boolean(sessionError)}
-            className={inputClass}
-          >
-            <option value="">All sessions</option>
-            {sessions.map((session) => (
-              <option key={session.id} value={session.id}>{session.title}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="report-status" className="mb-1 block text-xs font-semibold text-gray-600">Status</label>
-          <select
-            id="report-status"
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-            className={inputClass}
-          >
-            <option value="">All statuses</option>
-            <option value="submitted">Submitted</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-        </div>
-        <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-6">
-          <button type="submit" disabled={loading || initializing} className={primaryButtonClass}>
-            Apply Filter
-          </button>
-          <button type="button" onClick={applyToday} disabled={loading || initializing} className={secondaryButtonClass}>
-            Today
-          </button>
-          <button type="button" onClick={resetFilters} disabled={loading || initializing} className={secondaryButtonClass}>
-            Reset
-          </button>
-          {filterError && <p role="alert" className="w-full text-sm text-red-700">{filterError}</p>}
-          {sessionError && <p role="alert" className="w-full text-sm text-amber-800">Session filter unavailable: {sessionError}</p>}
-        </div>
-      </form>
+        <Button
+          variant="secondary"
+          icon="filter"
+          onClick={applyToday}
+          disabled={loading || initializing}
+          className="min-h-[40px]"
+        >
+          Today
+        </Button>
+      </PageHeader>
+
+      {/* Filter Card */}
+      <Card
+        title="Filter orders"
+        action={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              onClick={resetFilters}
+              disabled={loading || initializing}
+              className="min-h-[32px] px-2.5 py-1 text-xs"
+            >
+              Reset
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={applyToday}
+              disabled={loading || initializing}
+              className="min-h-[32px] px-2.5 py-1 text-xs"
+            >
+              Today
+            </Button>
+          </div>
+        }
+      >
+        <form onSubmit={applyFilters} className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div>
+              <label
+                htmlFor="report-date-from"
+                className="mb-1 block text-xs font-semibold text-stone-600"
+              >
+                From date
+              </label>
+              <input
+                id="report-date-from"
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(event) => setDateFrom(event.target.value)}
+                className={input}
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="report-date-to"
+                className="mb-1 block text-xs font-semibold text-stone-600"
+              >
+                To date
+              </label>
+              <input
+                id="report-date-to"
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(event) => setDateTo(event.target.value)}
+                className={input}
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="report-customer-search"
+                className="mb-1 block text-xs font-semibold text-stone-600"
+              >
+                Customer search
+              </label>
+              <input
+                id="report-customer-search"
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Name, username, ID"
+                className={input}
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="report-session"
+                className="mb-1 block text-xs font-semibold text-stone-600"
+              >
+                Session
+              </label>
+              <select
+                id="report-session"
+                value={sessionId}
+                onChange={(event) => setSessionId(event.target.value)}
+                disabled={Boolean(sessionError)}
+                className={input}
+              >
+                <option value="">All sessions</option>
+                {sessions.map((session) => (
+                  <option key={session.id} value={session.id}>
+                    {session.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label
+                htmlFor="report-status"
+                className="mb-1 block text-xs font-semibold text-stone-600"
+              >
+                Status
+              </label>
+              <select
+                id="report-status"
+                value={status}
+                onChange={(event) => setStatus(event.target.value)}
+                className={input}
+              >
+                <option value="">All statuses</option>
+                <option value="submitted">Submitted</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-100 pt-3">
+            <div className="space-y-1">
+              {filterError && (
+                <p role="alert" className="text-xs font-medium text-rose-600">
+                  {filterError}
+                </p>
+              )}
+              {sessionError && (
+                <p role="alert" className="text-xs font-medium text-amber-600">
+                  Session filter unavailable: {sessionError}
+                </p>
+              )}
+            </div>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={loading || initializing}
+              className="min-h-[40px]"
+            >
+              {loading ? 'Filtering…' : 'Apply filter'}
+            </Button>
+          </div>
+        </form>
+      </Card>
 
       {error && (
-        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-          <p>{error}</p>
-          <button
-            type="button"
-            onClick={() => (query ? setReportRetry((value) => value + 1) : setInitialRetry((value) => value + 1))}
-            className="mt-2 font-semibold underline"
+        <div
+          role="alert"
+          className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex items-center gap-2.5">
+            <Icon name="close" size={18} className="shrink-0 text-rose-500" />
+            <p>{error}</p>
+          </div>
+          <Button
+            variant="secondary"
+            className="self-start sm:self-auto min-h-[36px] px-3 py-1.5 text-xs"
+            onClick={() =>
+              query
+                ? setReportRetry((value) => value + 1)
+                : setInitialRetry((value) => value + 1)
+            }
           >
             Retry
-          </button>
+          </Button>
         </div>
       )}
 
-      {initializing || loading ? (
-        <section aria-label="Loading report" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {loading ? (
+        <section
+          aria-label="Loading report"
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+        >
           {[0, 1, 2, 3].map((item) => (
-            <div key={item} className="h-28 animate-pulse rounded-2xl border border-gray-200 bg-white p-5">
-              <div className="h-3 w-28 rounded bg-gray-200" />
-              <div className="mt-4 h-7 w-32 rounded bg-gray-200" />
+            <div
+              key={item}
+              className="h-28 animate-pulse rounded-2xl border border-stone-200 bg-white p-5 shadow-sm"
+            >
+              <div className="h-3 w-28 rounded bg-stone-100" />
+              <div className="mt-4 h-7 w-32 rounded bg-stone-100" />
             </div>
           ))}
         </section>
-      ) : !error && (
-        <>
-          <section aria-label="Filtered order summary" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <p className="text-sm font-medium text-gray-500">Total orders</p>
-              <p className="mt-2 text-3xl font-bold text-gray-900">{Number(summary?.total_orders) || 0}</p>
-            </article>
-            <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <p className="text-sm font-medium text-gray-500">Total drinks ordered</p>
-              <p className="mt-2 text-3xl font-bold text-gray-900">{Number(summary?.total_items) || 0}</p>
-            </article>
-            <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <p className="text-sm font-medium text-gray-500">Total sales</p>
-              <p className="mt-2 text-3xl font-bold text-emerald-700">{formatRiel(summary?.total_sales)}</p>
-            </article>
-            <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <p className="text-sm font-medium text-gray-500">Customers who ordered</p>
-              <p className="mt-2 text-3xl font-bold text-gray-900">{Number(summary?.total_customers) || 0}</p>
-            </article>
-          </section>
-
-          <section aria-label="Customer orders" className="space-y-4">
-            {orders.map((order) => <OrderCard key={order.id} order={order} timeZone={timeZone} />)}
-            {orders.length === 0 && (
-              <div className="rounded-2xl border border-gray-200 bg-white px-5 py-12 text-center">
-                <h2 className="font-semibold text-gray-800">No orders found</h2>
-                <p className="mt-1 text-sm text-gray-500">No customer orders match the selected filters.</p>
-              </div>
-            )}
-            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
-              <Pagination
-                page={pagination.currentPage}
-                lastPage={pagination.lastPage}
-                total={pagination.total}
-                loading={loading}
-                onChange={(page) => setQuery((current) => current && ({ ...current, page }))}
+      ) : (
+        !error && (
+          <>
+            {/* Summary Statistics */}
+            <section
+              aria-label="Filtered order summary"
+              className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+            >
+              <StatCard
+                label="Total orders"
+                value={Number(summary?.total_orders) || 0}
+                hint="Orders in selected range"
+                icon="receipt"
+                tone="blue"
               />
-            </div>
-          </section>
+              <StatCard
+                label="Total drinks ordered"
+                value={Number(summary?.total_items) || 0}
+                hint="Drinks and items served"
+                icon="cup"
+                tone="amber"
+              />
+              <StatCard
+                label="Total sales"
+                value={formatRiel(summary?.total_sales)}
+                hint="Gross revenue"
+                icon="coins"
+                tone="green"
+              />
+              <StatCard
+                label="Customers who ordered"
+                value={Number(summary?.total_customers) || 0}
+                hint="Unique customer count"
+                icon="users"
+                tone="rose"
+              />
+            </section>
 
-          <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-            <div className="border-b border-gray-100 px-5 py-4">
-              <h2 className="font-bold text-gray-900">Top-selling products</h2>
-              <p className="mt-1 text-xs text-gray-500">
-                Product totals for the selected date range, as returned by Laravel.
-              </p>
-            </div>
-            {productsError && (
-              <div role="alert" className="border-b border-red-100 bg-red-50 px-5 py-3 text-sm text-red-800">
-                {productsError}
-                <button
-                  type="button"
-                  onClick={() => setProductsRetry((value) => value + 1)}
-                  className="ml-2 font-semibold underline"
-                >
-                  Retry
-                </button>
+            {/* Customer Orders */}
+            <section aria-label="Customer orders" className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-bold text-stone-900">Customer orders</h2>
+                <span className="text-xs text-stone-500">
+                  {pagination.total} {pagination.total === 1 ? 'order' : 'orders'} found
+                </span>
               </div>
-            )}
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[560px] text-left">
-                <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                  <tr>
-                    <th scope="col" className="px-5 py-3 font-semibold">Product</th>
-                    <th scope="col" className="px-5 py-3 text-center font-semibold">Quantity sold</th>
-                    <th scope="col" className="px-5 py-3 text-right font-semibold">Revenue</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 text-sm">
-                  {topProducts.map((item, index) => (
-                    <tr key={item.product_id ?? item.id ?? `${item.product_name}-${index}`} className="hover:bg-gray-50">
-                      <td className="px-5 py-3 font-medium text-gray-900">{item.product_name}</td>
-                      <td className="px-5 py-3 text-center text-gray-600">{item.total_quantity}</td>
-                      <td className="px-5 py-3 text-right font-semibold text-emerald-700">{formatRiel(item.total_revenue)}</td>
-                    </tr>
-                  ))}
-                  {topProducts.length === 0 && (
+
+              {orders.map((order) => (
+                <OrderCard key={order.id} order={order} timeZone={timeZone} />
+              ))}
+
+              {orders.length === 0 && (
+                <Card padded={true}>
+                  <EmptyState
+                    icon="receipt"
+                    title="No orders found"
+                    description="No customer orders match the selected filters."
+                    action={
+                      <Button variant="secondary" onClick={resetFilters}>
+                        Reset filters
+                      </Button>
+                    }
+                  />
+                </Card>
+              )}
+
+              {orders.length > 0 && (
+                <div className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">
+                  <Pagination
+                    page={pagination.currentPage}
+                    lastPage={pagination.lastPage}
+                    total={pagination.total}
+                    loading={loading}
+                    onChange={(page) =>
+                      setQuery((current) => current && { ...current, page })
+                    }
+                  />
+                </div>
+              )}
+            </section>
+
+            {/* Top-selling Products */}
+            <Card
+              title="Top-selling products"
+              action={
+                <span className="text-xs text-stone-500">For selected date range</span>
+              }
+              padded={false}
+            >
+              {productsError && (
+                <div
+                  role="alert"
+                  className="flex items-center justify-between border-b border-rose-100 bg-rose-50 px-5 py-3 text-xs text-rose-800"
+                >
+                  <p>{productsError}</p>
+                  <Button
+                    variant="secondary"
+                    className="min-h-[28px] px-2.5 py-0.5 text-xs"
+                    onClick={() => setProductsRetry((value) => value + 1)}
+                  >
+                    Retry
+                  </Button>
+                </div>
+              )}
+              <div className={tableWrap}>
+                <table className={table}>
+                  <thead>
                     <tr>
-                      <td colSpan="3" className="px-5 py-10 text-center text-sm text-gray-500">
-                        No product sales match this date range.
-                      </td>
+                      <th scope="col" className={th}>Product</th>
+                      <th scope="col" className={`${th} text-center`}>Quantity sold</th>
+                      <th scope="col" className={`${th} text-right`}>Revenue</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {topProducts.map((item, index) => (
+                      <tr
+                        key={item.product_id ?? item.id ?? `${item.product_name}-${index}`}
+                        className={tr}
+                      >
+                        <td className={`${td} font-medium text-stone-900`}>{item.product_name}</td>
+                        <td className={`${td} text-center text-stone-700`}>{item.total_quantity}</td>
+                        <td className={`${td} text-right font-semibold text-stone-900`}>
+                          {formatRiel(item.total_revenue)}
+                        </td>
+                      </tr>
+                    ))}
+                    {topProducts.length === 0 && (
+                      <tr>
+                        <td colSpan="3" className="px-5 py-10 text-center text-sm text-stone-500">
+                          No product sales match this date range.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </>
+        )
       )}
-    </main>
+    </div>
   );
 }
