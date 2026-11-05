@@ -6,6 +6,7 @@ import { formatRiel } from '../../utils/currency';
 import { closeTelegramApp } from '../../utils/telegram';
 import { Icon } from '../../components/ui';
 import CoffeeLoader from '../../components/CoffeeLoader';
+import BottomTabs from '../../components/miniapp/BottomTabs';
 
 const STEPS = ['Received', 'Preparing', 'Confirmed'];
 
@@ -121,7 +122,7 @@ export default function MyOrderPage() {
   const status = STATUS[statusKey(order?.status)];
 
   return (
-    <div className="mx-auto min-h-screen max-w-lg bg-stone-50 p-4 pb-[calc(2rem+env(safe-area-inset-bottom))] text-stone-800">
+    <div className="mx-auto min-h-screen max-w-lg bg-stone-50 p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] text-stone-800">
       <header className="mb-4 flex items-center gap-3 rounded-2xl bg-[#1f1a17] p-4 text-white shadow-sm">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
           <Icon name="receipt" size={22} />
@@ -320,6 +321,7 @@ export default function MyOrderPage() {
           </button>
         </div>
       )}
+      <BottomTabs />
     </div>
   );
 }

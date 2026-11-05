@@ -14,6 +14,8 @@ const LoginPage = lazy(() => import('./pages/Admin/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/Admin/RegisterPage'));
 const MyOrderPage = lazy(() => import('./pages/MiniApp/MyOrderPage'));
 const MiniAppProductsPage = lazy(() => import('./pages/MiniApp/ProductsPage'));
+const ProfilePage = lazy(() => import('./pages/MiniApp/ProfilePage'));
+const SpendingPage = lazy(() => import('./pages/MiniApp/Spendingpage'));
 const UsersPage = lazy(() => import('./pages/Admin/UsersPage'));
 const StoresManagementPage = lazy(() => import('./pages/SuperAdmin/StoresManagementPage'));
 
@@ -62,6 +64,8 @@ function App() {
           <Route path="/menu" element={<MiniAppProductsPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/my-order" element={<MyOrderPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/spending" element={<SpendingPage />} />
 
           {/* Catch-all redirect */}
           <Route path="*" element={<Navigate to="/" replace />} />

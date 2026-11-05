@@ -12,6 +12,7 @@ import CartCheckoutModal from './CartCheckoutModal';
 import SugarSelectionModal from './SugarSelectionModal';
 import SessionBanner from '../../components/miniapp/SessionBanner';
 import ProductGrid from '../../components/miniapp/ProductGrid';
+import BottomTabs from '../../components/miniapp/BottomTabs';
 
 const SESSION_REFRESH_MS = 15000;
 const INITIAL_NOW = Date.now();
@@ -276,7 +277,7 @@ export default function MiniAppProductsPage() {
     }`;
 
   return (
-    <div className={`min-h-screen bg-[#f6f4f1] text-stone-800 ${totalCartItems > 0 ? 'pb-32' : 'pb-10'}`}>
+    <div className={`min-h-screen bg-[#f6f4f1] text-stone-800 ${totalCartItems > 0 ? 'pb-44' : 'pb-24'}`}>
       <header className="sticky top-0 z-20 shadow-sm">
         <SessionBanner
           session={session}
@@ -364,12 +365,12 @@ export default function MiniAppProductsPage() {
       />
 
       {/* Confirmation toast */}
-      <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-[calc(6.5rem+env(safe-area-inset-bottom))] z-30 flex justify-center px-4">
+      <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-[calc(10.5rem+env(safe-area-inset-bottom))] z-30 flex justify-center px-4">
         {toast && <span className="rounded-full bg-stone-900/90 px-4 py-2 text-sm font-medium text-white shadow-lg">{toast}</span>}
       </div>
 
       {totalCartItems > 0 && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="pointer-events-none fixed inset-x-0 bottom-[calc(3.75rem+env(safe-area-inset-bottom))] z-30 px-4 pb-3">
           <button
             type="button"
             onClick={() => setShowCheckout(true)}
@@ -394,6 +395,8 @@ export default function MiniAppProductsPage() {
           </button>
         </div>
       )}
+
+      <BottomTabs />
 
       <CartCheckoutModal
         isOpen={showCheckout}
