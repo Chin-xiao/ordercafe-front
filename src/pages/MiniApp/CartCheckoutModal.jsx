@@ -1,9 +1,23 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import api from '../../api/axios';
 import { getApiErrorMessage } from '../../api/errors';
 import { formatRiel } from '../../utils/currency';
 import { getInitData } from '../../utils/telegram';
 import { isOrderSessionOpen, unwrapApiData } from '../../utils/orderSession';
+import { Icon } from '../../components/ui';
+
+const ALERT_TONES = {
+  red: 'border-red-200 bg-red-50 text-red-700',
+  amber: 'border-amber-200 bg-amber-50 text-amber-800',
+};
+
+function Alert({ tone = 'red', children }) {
+  return (
+    <p role="alert" className={`rounded-xl border p-3 text-sm ${ALERT_TONES[tone]}`}>
+      {children}
+    </p>
+  );
+}
 
 export default function CartCheckoutModal({
   isOpen,
@@ -21,9 +35,18 @@ export default function CartCheckoutModal({
   const [error, setError] = useState('');
   const submittingRef = useRef(false);
 
+  // Close with Escape, but never while an order is being submitted
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape' && !loading) onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, loading, onClose]);
+
   if (!isOpen) return null;
 
   const subtotal = cart.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
+  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const handleUpdateQuantity = (cartId, delta) => {
     setCart((previousCart) =>
@@ -100,110 +123,149 @@ export default function CartCheckoutModal({
   const canSubmit = cart.length > 0 && orderingOpen && initDataAvailable && !loading;
 
   return (
-    <div className="fixed inset-0 z-50 mx-auto flex max-w-3xl flex-col justify-end bg-stone-950/50 sm:justify-center sm:p-4">
+    <div
+      className="fixed inset-0 z-50 mx-auto flex max-w-3xl flex-col justify-end bg-stone-950/50 sm:justify-center sm:p-4"
+      onClick={(e) => { if (e.target === e.currentTarget && !loading) onClose(); }}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="cart-dialog-title"
-        className="flex max-h-[90dvh] flex-col rounded-t-3xl bg-white p-5 shadow-2xl sm:mx-auto sm:w-full sm:max-w-xl sm:rounded-3xl"
+        className="flex max-h-[92dvh] flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:mx-auto sm:w-full sm:max-w-xl sm:rounded-3xl"
       >
-        <div className="flex justify-between items-center pb-3 border-b border-gray-100">
-          <h2 id="cart-dialog-title" className="text-base font-bold text-gray-800">🛒 Your Order Summary</h2>
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+              <Icon name="cart" size={20} />
+            </span>
+            <div className="leading-tight">
+              <h2 id="cart-dialog-title" className="text-base font-bold text-stone-900">Your order</h2>
+              <p className="text-xs text-stone-500">{totalItems === 1 ? '1 item' : `${totalItems} items`}</p>
+            </div>
+          </div>
           <button
+            type="button"
             onClick={onClose}
             disabled={loading}
             aria-label="Close cart"
-            className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 font-bold disabled:opacity-50"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-stone-100 text-stone-600 transition-colors hover:bg-stone-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-50"
           >
-            ✕
+            <Icon name="close" size={18} />
           </button>
         </div>
 
-        {!orderingOpen && (
-          <p role="alert" className="mt-3 bg-red-50 text-red-700 p-3 rounded-xl text-xs border border-red-200">
-            Ordering is closed. You can review the cart, but orders cannot be submitted.
-          </p>
-        )}
-        {!initDataAvailable && (
-          <p role="alert" className="mt-3 bg-amber-50 text-amber-800 p-3 rounded-xl text-xs border border-amber-200">
-            Open this page in Telegram to verify your account and submit your order.
-          </p>
-        )}
-        {error && (
-          <div role="alert" className="mt-3 bg-red-50 text-red-600 p-3 rounded-xl text-xs font-medium border border-red-200">
-            {error}
-          </div>
-        )}
+        {/* Scrollable body */}
+        <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+          {!orderingOpen && (
+            <Alert>Ordering is closed. You can review the cart, but orders cannot be submitted.</Alert>
+          )}
+          {!initDataAvailable && (
+            <Alert tone="amber">Open this page in Telegram to verify your account and submit your order.</Alert>
+          )}
+          {error && <Alert>{error}</Alert>}
 
-        <div className="overflow-y-auto py-3 space-y-3 flex-1 divide-y divide-gray-50">
           {cart.length === 0 ? (
-            <p className="text-center text-gray-400 py-8 text-sm">Your cart is empty.</p>
-          ) : cart.map((item) => (
-            <div key={item.cart_id} className="pt-3 flex justify-between items-center gap-3">
-              <div className="min-w-0">
-                <h3 className="font-semibold text-sm text-gray-800">{item.name}</h3>
-                <p className="text-xs text-gray-500">
-                  {item.requires_sugar ? `${item.sugar_percent}% sugar` : 'Standard'} · {item.quantity} × {formatRiel(item.price)}
-                </p>
-                <button
-                  onClick={() => handleRemoveItem(item.cart_id)}
-                  disabled={loading}
-                  className="mt-1 text-xs text-red-600 underline"
-                >
-                  Remove
-                </button>
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <div className="flex items-center bg-gray-50 rounded-lg border border-gray-200 p-1">
-                  <button
-                    onClick={() => handleUpdateQuantity(item.cart_id, -1)}
-                    disabled={loading}
-                    aria-label={`Remove one ${item.name}`}
-                    className="w-7 h-7 bg-white text-gray-700 font-bold rounded shadow-xs text-xs disabled:opacity-50"
-                  >−</button>
-                  <span className="w-7 text-center text-xs font-bold text-gray-800">{item.quantity}</span>
-                  <button
-                    onClick={() => handleUpdateQuantity(item.cart_id, 1)}
-                    disabled={loading || item.quantity >= 100}
-                    aria-label={`Add one ${item.name}`}
-                    className="w-7 h-7 bg-emerald-600 text-white font-bold rounded shadow-xs text-xs disabled:opacity-50"
-                  >+</button>
-                </div>
-                <span className="text-sm font-bold text-gray-800 w-16 text-right">
-                  {formatRiel(Number(item.price) * item.quantity)}
-                </span>
-              </div>
+            <div className="flex flex-col items-center py-10 text-center">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-stone-100 text-stone-400">
+                <Icon name="cart" size={26} />
+              </span>
+              <p className="mt-3 text-sm font-semibold text-stone-900">Your cart is empty</p>
+              <p className="mt-1 text-sm text-stone-500">Add a drink from the menu to get started.</p>
+              <button
+                type="button"
+                onClick={onClose}
+                className="mt-4 min-h-11 rounded-xl border border-stone-300 px-5 text-sm font-semibold text-stone-700 hover:bg-stone-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              >
+                Back to menu
+              </button>
             </div>
-          ))}
+          ) : (
+            <ul className="divide-y divide-stone-100">
+              {cart.map((item) => (
+                <li key={item.cart_id} className="flex items-start justify-between gap-3 py-4 first:pt-1">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate text-sm font-semibold text-stone-900">{item.name}</h3>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-stone-500">
+                      {item.requires_sugar && (
+                        <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20">
+                          {item.sugar_percent}% sugar
+                        </span>
+                      )}
+                      <span>{formatRiel(item.price)} each</span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveItem(item.cart_id)}
+                      disabled={loading}
+                      className="mt-2 inline-flex min-h-8 items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700 focus:outline-none focus-visible:underline disabled:opacity-50"
+                    >
+                      <Icon name="trash" size={14} />
+                      Remove
+                    </button>
+                  </div>
+
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <span className="text-sm font-bold text-stone-900">{formatRiel(Number(item.price) * item.quantity)}</span>
+                    <div className="flex items-center rounded-xl bg-stone-100 p-1">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateQuantity(item.cart_id, -1)}
+                        disabled={loading}
+                        aria-label={`Remove one ${item.name}`}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-stone-700 shadow-sm transition-colors hover:bg-stone-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-50"
+                      >
+                        <Icon name={item.quantity === 1 ? 'trash' : 'minus'} size={16} />
+                      </button>
+                      <span aria-live="polite" className="w-9 text-center text-sm font-bold text-stone-900">{item.quantity}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateQuantity(item.cart_id, 1)}
+                        disabled={loading || item.quantity >= 100}
+                        aria-label={`Add one ${item.name}`}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-700 text-white shadow-sm transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:opacity-50"
+                      >
+                        <Icon name="plus" size={16} />
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {cart.length > 0 && (
+            <div>
+              <label htmlFor="order-note" className="mb-1.5 block text-sm font-semibold text-stone-800">
+                Note for the cafe <span className="font-normal text-stone-400">(optional)</span>
+              </label>
+              <input
+                id="order-note"
+                type="text"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder="e.g. Less sweet, extra ice"
+                className="h-12 w-full rounded-xl border border-stone-200 bg-stone-50 px-4 text-base text-stone-800 outline-none placeholder:text-stone-400 focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+              />
+            </div>
+          )}
         </div>
 
+        {/* Footer: total + place order */}
         {cart.length > 0 && (
-          <div className="py-3 border-t border-gray-100">
-            <label htmlFor="order-note" className="block text-xs font-semibold text-gray-500 mb-1">Special Instructions / Note</label>
-            <input
-              id="order-note"
-              type="text"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder="e.g. Less sweet, extra ice..."
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 focus:ring-2 focus:ring-emerald-500 outline-none"
-            />
-          </div>
-        )}
-
-        {cart.length > 0 && (
-          <div className="pt-3 border-t border-gray-100 space-y-3">
-            <div className="flex justify-between items-center text-base font-bold text-gray-800">
-              <span>Subtotal (estimate):</span>
-              <span className="text-emerald-600 text-lg">{formatRiel(subtotal)}</span>
+          <div className="space-y-3 border-t border-stone-100 bg-white px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4">
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm font-semibold text-stone-700">Subtotal (estimate)</span>
+              <span className="text-2xl font-bold text-emerald-700">{formatRiel(subtotal)}</span>
             </div>
-            <p className="text-xs text-gray-500">The backend recalculates the final total using current product prices.</p>
+            <p className="text-xs text-stone-500">The final total is recalculated with current prices when you place the order.</p>
             <button
+              type="button"
               disabled={!canSubmit}
               onClick={handleCheckout}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm shadow-md transition disabled:opacity-50"
+              className="flex min-h-14 w-full items-center justify-center rounded-2xl bg-emerald-700 px-4 text-base font-bold text-white shadow-sm transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-300"
             >
-              {loading ? 'Submitting Order...' : 'Confirm & Place Order'}
+              {loading ? 'Submitting order…' : `Place order · ${formatRiel(subtotal)}`}
             </button>
           </div>
         )}

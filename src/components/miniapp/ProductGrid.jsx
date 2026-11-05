@@ -4,9 +4,10 @@ import { formatRiel } from '../../utils/currency';
 export const ProductImage = React.memo(function ProductImage({ product, eager = false }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
-  if (!product.image_url || failed) {
+  
+  if (!product?.image_url || failed) {
     return (
-      <div className="flex aspect-[4/3] w-full items-center justify-center bg-stone-100 text-xs text-stone-400" aria-label={`Image unavailable for ${product.name}`}>
+      <div className="flex aspect-[4/3] w-full items-center justify-center bg-stone-100 text-xs text-stone-400" aria-label={`Image unavailable for ${product?.name || 'item'}`}>
         Image unavailable
       </div>
     );
@@ -32,15 +33,20 @@ export const ProductImage = React.memo(function ProductImage({ product, eager = 
 });
 
 export default function ProductGrid({
-  products,
-  loading,
-  error,
-  search,
-  orderingOpen,
-  cartByProduct,
-  onProductClick,
-  onRetryMenu
+  products = [],
+  loading = false,
+  error = null,
+  search = '',
+  orderingOpen = true,
+  cartByProduct = new Map(),
+  onProductClick = () => {},
+  onRetryMenu = () => {}
 }) {
+  // Safely handle cartByProduct even if it's passed as a plain object or undefined
+  const cartMap = cartByProduct instanceof Map 
+    ? cartByProduct 
+    : new Map(Object.entries(cartByProduct || {}));
+
   if (loading && products.length === 0) {
     return (
       <div className="mx-auto grid max-w-3xl grid-cols-2 gap-3 p-4 sm:grid-cols-3 sm:gap-4">
@@ -57,10 +63,30 @@ export default function ProductGrid({
     );
   }
 
+  if (error) {
+    return (
+      <div className="mx-auto max-w-md p-8 text-center">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
+          <p className="text-sm font-semibold text-red-800">Server Error</p>
+          <p className="mt-1 text-xs text-red-600">{error.message || 'Unable to load products for this store.'}</p>
+          <button
+            onClick={onRetryMenu}
+            className="mt-4 rounded-xl bg-red-700 px-4 py-2 text-xs font-semibold text-white transition hover:bg-red-800"
+          >
+            Retry menu
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto grid max-w-3xl grid-cols-2 gap-3 p-4 sm:grid-cols-3 sm:gap-4">
       {products.map((product, index) => {
         const unavailable = product.is_available === false;
+        const productIdStr = String(product.id);
+        const cartItems = cartMap.get(productIdStr);
+
         return (
           <article key={product.id} className={`flex flex-col justify-between overflow-hidden rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md ${unavailable ? 'border-stone-200 opacity-75' : 'border-stone-100'}`}>
             <div>
@@ -82,10 +108,10 @@ export default function ProductGrid({
               </div>
             </div>
             <div className="p-3 pt-0">
-              {cartByProduct.has(String(product.id)) && (
+              {cartItems && cartItems.length > 0 && (
                 <p className="mb-2 text-[11px] text-stone-500">
-                  In cart: {cartByProduct.get(String(product.id))
-                    .map((item) => item.sugar_percent !== null ? `${item.sugar_percent}% × ${item.quantity}` : `${item.quantity}`)
+                  In cart: {cartItems
+                    .map((item) => item.sugar_percent !== null && item.sugar_percent !== undefined ? `${item.sugar_percent}% × ${item.quantity}` : `${item.quantity}`)
                     .join(' · ')}
                 </p>
               )}
@@ -101,9 +127,10 @@ export default function ProductGrid({
         );
       })}
       {products.length === 0 && !error && (
-        <p className="col-span-full py-8 text-center text-sm text-stone-500">
-          {loading ? 'Loading drinks…' : search ? 'No menu items match your search.' : 'No products are available in this category.'}
-        </p>
+        <div className="col-span-full py-12 text-center">
+          <p className="text-sm font-medium text-stone-600">No products are available in this store yet.</p>
+          <p className="mt-1 text-xs text-stone-400">Add products from your admin panel to start selling.</p>
+        </div>
       )}
     </div>
   );

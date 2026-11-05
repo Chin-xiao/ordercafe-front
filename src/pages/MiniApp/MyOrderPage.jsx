@@ -1,12 +1,44 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import { getApiErrorMessage } from '../../api/errors';
 import { formatRiel } from '../../utils/currency';
 import { closeTelegramApp } from '../../utils/telegram';
+import { Icon } from '../../components/ui';
+import CoffeeLoader from '../../components/CoffeeLoader';
+
+const STEPS = ['Received', 'Preparing', 'Confirmed'];
+
+const STATUS = {
+  pending: {
+    label: 'Pending review', hint: 'The cafe team will check your order shortly.', step: 0, icon: 'clock',
+    box: 'border-sky-200 bg-sky-50', wrap: 'bg-sky-100 text-sky-700', text: 'text-sky-900',
+  },
+  preparing: {
+    label: 'Preparing your drink', hint: 'Your order is being made right now.', step: 1, icon: 'cup',
+    box: 'border-amber-200 bg-amber-50', wrap: 'bg-amber-100 text-amber-700', text: 'text-amber-900',
+  },
+  completed: {
+    label: 'Order confirmed', hint: 'Thank you. Your order is confirmed.', step: 2, icon: 'check',
+    box: 'border-emerald-200 bg-emerald-50', wrap: 'bg-emerald-100 text-emerald-700', text: 'text-emerald-900',
+  },
+  cancelled: {
+    label: 'Order cancelled', hint: 'This order was cancelled. Contact the cafe if this is a mistake.', step: -1, icon: 'close',
+    box: 'border-rose-200 bg-rose-50', wrap: 'bg-rose-100 text-rose-700', text: 'text-rose-900',
+  },
+};
+
+function statusKey(status) {
+  const value = status?.toLowerCase();
+  if (value === 'completed' || value === 'success') return 'completed';
+  if (value === 'preparing') return 'preparing';
+  if (value === 'cancelled') return 'cancelled';
+  return 'pending';
+}
 
 export default function MyOrderPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const initialOrder = location.state?.order;
   const [order, setOrder] = useState(initialOrder || null);
   const [paymentQrImageUrl, setPaymentQrImageUrl] = useState(
@@ -29,7 +61,7 @@ export default function MyOrderPage() {
       const refreshedOrder = response.data?.data
         || (response.data?.id ? response.data : null);
       if (refreshedOrder) setOrder(refreshedOrder);
-      
+
       // Update both payment QR image and payment link
       setPaymentQrImageUrl(response.data?.payment_qr_image_url ?? null);
       setPaymentLink(response.data?.payment_link ?? null);
@@ -42,10 +74,18 @@ export default function MyOrderPage() {
 
   useEffect(() => {
     const initialFetch = window.setTimeout(fetchMyOrder, 0);
-    const interval = setInterval(fetchMyOrder, 10000);
+    // Poll only while the app is visible, and refresh as soon as the customer returns
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchMyOrder();
+    }, 10000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchMyOrder();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       window.clearTimeout(initialFetch);
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [fetchMyOrder, initialOrder]);
 
@@ -69,179 +109,209 @@ export default function MyOrderPage() {
     }
   };
 
-  const getStatusBadge = (status) => {
-    switch (status?.toLowerCase()) {
-      case 'completed':
-      case 'success':
-        return <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">✅ Order Confirmed</span>;
-      case 'preparing':
-        return <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full animate-pulse">☕ Preparing Your Drink</span>;
-      case 'cancelled':
-        return <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">❌ Order Cancelled</span>;
-      default:
-        return <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">⏳ Pending Review</span>;
-    }
-  };
-
   if (loading && !order) {
     return (
-      <div className="flex justify-center items-center h-screen bg-gray-50 text-gray-500 text-sm">
-        Checking your order status...
-      </div>
+      <CoffeeLoader
+        title="Checking your order"
+        message="Fetching the latest status from the cafe."
+      />
     );
   }
 
+  const status = STATUS[statusKey(order?.status)];
+
   return (
-    <div className="p-4 max-w-lg mx-auto bg-gray-50 min-h-screen text-gray-800 pb-12">
-      <div className="bg-emerald-600 text-white p-4 rounded-2xl shadow-md mb-4 text-center">
-        <h1 className="text-lg font-bold">📋 Order Tracking</h1>
-        <p className="text-xs text-emerald-100 mt-1">Live updates from the cafe team</p>
-      </div>
+    <div className="mx-auto min-h-screen max-w-lg bg-stone-50 p-4 pb-[calc(2rem+env(safe-area-inset-bottom))] text-stone-800">
+      <header className="mb-4 flex items-center gap-3 rounded-2xl bg-emerald-700 p-4 text-white shadow-sm">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
+          <Icon name="receipt" size={22} />
+        </span>
+        <div className="leading-tight">
+          <h1 className="text-lg font-bold">Order tracking</h1>
+          <p className="mt-0.5 text-xs text-emerald-100">Live updates from the cafe team</p>
+        </div>
+      </header>
 
       {error && !order ? (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 text-center space-y-3">
-          <div className="text-3xl">☕</div>
-          <h3 className="font-bold text-gray-800 text-base">No Active Order</h3>
-          <p className="text-xs text-gray-500">{error}</p>
+        <div className="rounded-2xl border border-stone-200 bg-white p-8 text-center shadow-sm">
+          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-stone-100 text-stone-400">
+            <Icon name="cup" size={28} />
+          </span>
+          <h2 className="mt-4 text-base font-bold text-stone-900">No active order</h2>
+          <p className="mt-1 text-sm text-stone-500">{error}</p>
           <button
-            onClick={() => window.location.href = '/menu'}
-            className="mt-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow transition"
+            type="button"
+            onClick={() => navigate('/menu')}
+            className="mt-5 min-h-12 rounded-xl bg-emerald-700 px-6 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2"
           >
-            Browse Menu & Order
+            Browse menu and order
           </button>
         </div>
       ) : (
-        <>
+        <div className="space-y-4">
           {error && (
-            <div role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
               Showing the order returned at checkout. Latest status could not be refreshed: {error}
-              <button onClick={fetchMyOrder} className="ml-1 font-semibold underline">Retry</button>
+              <button type="button" onClick={fetchMyOrder} className="ml-1 font-semibold underline">Retry</button>
             </div>
           )}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
-            
-            {/* Order Meta Header */}
-            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+
+          {/* Status */}
+          <section role="status" aria-live="polite" className={`rounded-2xl border p-4 ${status.box}`}>
+            <div className="flex items-center gap-3">
+              <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${status.wrap}`}>
+                <Icon name={status.icon} size={24} />
+              </span>
+              <div className="min-w-0">
+                <p className={`text-base font-bold ${status.text}`}>{status.label}</p>
+                <p className="text-sm text-stone-600">{status.hint}</p>
+              </div>
+            </div>
+
+            {status.step >= 0 && (
+              <ol className="mt-4 flex items-center" aria-label="Order progress">
+                {STEPS.map((label, index) => {
+                  const done = index <= status.step;
+                  return (
+                    <li key={label} className="flex flex-1 items-center last:flex-none">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${done ? 'bg-emerald-600 text-white' : 'bg-white text-stone-400 ring-1 ring-stone-200'}`}>
+                          {done ? <Icon name="check" size={14} /> : index + 1}
+                        </span>
+                        <span className={`text-[11px] font-medium ${done ? 'text-stone-800' : 'text-stone-400'}`}>{label}</span>
+                      </div>
+                      {index < STEPS.length - 1 && (
+                        <span className={`mx-2 mb-4 h-0.5 flex-1 rounded-full ${index < status.step ? 'bg-emerald-600' : 'bg-stone-200'}`} />
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </section>
+
+          {/* Order details */}
+          <section className="space-y-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+            <div className="flex items-start justify-between gap-3 border-b border-stone-100 pb-4">
               <div>
-                <span className="text-xs text-gray-400 font-semibold uppercase">Order number</span>
-                <h2 className="font-mono font-bold text-gray-800 text-base">
+                <p className="text-xs font-medium text-stone-500">Order number</p>
+                <h2 className="font-mono text-lg font-bold text-stone-900">
                   {order?.order_number || (order?.id ? `#${order.id}` : 'Submitted')}
                 </h2>
               </div>
-              <div>{getStatusBadge(order?.status)}</div>
+              <div className="text-right">
+                <p className="text-xs font-medium text-stone-500">Session</p>
+                <p className="text-sm font-semibold text-stone-900">
+                  {order?.session?.title || order?.order_session?.title || 'Cafe run'}
+                </p>
+              </div>
             </div>
 
-            {/* Session Title */}
-            <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 flex justify-between items-center text-xs">
-              <span className="text-gray-500 font-semibold">Session:</span>
-              <span className="font-bold text-gray-800">{order?.session?.title || order?.order_session?.title || 'Cafe Run'}</span>
-            </div>
-
-            {/* Items List */}
-            <div className="space-y-3">
-              <h3 className="text-xs font-bold text-gray-400 uppercase">Ordered Items</h3>
-              <div className="divide-y divide-gray-50">
+            <div>
+              <h3 className="text-sm font-bold text-stone-900">Ordered items</h3>
+              <ul className="mt-2 divide-y divide-stone-100">
                 {order?.items?.map((item, idx) => (
-                  <div key={idx} className="py-2.5 flex justify-between items-center text-sm">
-                    <div>
-                      <h4 className="font-semibold text-gray-800">{item.product_name || item.product?.name || item.name}</h4>
-                      <p className="text-xs text-gray-400">
+                  <li key={idx} className="flex items-center justify-between gap-3 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-stone-900">
+                        {item.product_name || item.product?.name || item.name}
+                      </p>
+                      <p className="text-xs text-stone-500">
                         {item.sugar_percent !== null && item.sugar_percent !== undefined
                           ? `${item.sugar_percent}% sugar · `
                           : ''}
                         Qty: {item.quantity} · {formatRiel(item.unit_price ?? item.price)} each
                       </p>
                     </div>
-                    <span className="font-bold text-emerald-600">
+                    <span className="shrink-0 text-sm font-bold text-stone-900">
                       {formatRiel(item.subtotal ?? Number(item.unit_price ?? item.price) * Number(item.quantity))}
                     </span>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
 
-            {/* Optional Note */}
             {order?.note && (
-              <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-800">
-                <span className="font-bold">Note:</span> {order.note}
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <span className="font-semibold">Note:</span> {order.note}
               </div>
             )}
 
-            {/* Total Price Bar */}
-            <div className="border-t border-gray-100 pt-3 flex justify-between items-center text-base font-bold text-gray-800">
-              <span>Total:</span>
-              <span className="text-emerald-600 text-lg">{formatRiel(order?.total_amount ?? order?.total_price)}</span>
+            <div className="flex items-center justify-between rounded-xl bg-stone-50 px-4 py-3">
+              <span className="text-sm font-semibold text-stone-700">Total</span>
+              <span className="text-xl font-bold text-emerald-700">{formatRiel(order?.total_amount ?? order?.total_price)}</span>
             </div>
+          </section>
 
-            {/* Payment Section */}
-            <div className="space-y-3 border-t border-gray-100 pt-4 text-center">
-              <h3 className="text-sm font-bold text-gray-800">Payment</h3>
+          {/* Payment */}
+          <section className="space-y-3 rounded-2xl border border-stone-200 bg-white p-5 text-center shadow-sm">
+            <h3 className="text-base font-bold text-stone-900">Payment</h3>
 
-              {/* Pay Now Button (Direct Bank / PayWay Link) */}
-              {paymentLink && (
-                <button
-                  type="button"
-                  onClick={handlePayNow}
-                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-[0.99]"
-                >
-                  <span>💳</span>
-                  <span>Pay Now</span>
-                </button>
-              )}
+            {paymentLink && (
+              <button
+                type="button"
+                onClick={handlePayNow}
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 active:scale-[0.99]"
+              >
+                <Icon name="card" size={18} />
+                Pay now
+              </button>
+            )}
 
-              {/* Payment QR Code */}
-              {paymentQrImageUrl && failedQrImageUrl !== paymentQrImageUrl ? (
-                <div className="space-y-1">
+            {paymentQrImageUrl && failedQrImageUrl !== paymentQrImageUrl ? (
+              <div className="space-y-2">
+                <div className="mx-auto w-full max-w-72 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
                   <img
                     src={paymentQrImageUrl}
                     alt="Cafe payment QR code"
                     onError={() => setFailedQrImageUrl(paymentQrImageUrl)}
-                    className="mx-auto max-h-72 w-full max-w-72 rounded-xl border border-gray-200 object-contain shadow-xs"
+                    className="mx-auto max-h-72 w-full rounded-lg object-contain"
                   />
-                  <p className="text-[11px] text-gray-400">Scan QR with your mobile banking app</p>
                 </div>
-              ) : (
-                !paymentLink && (
-                  <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                    {paymentQrImageUrl
-                      ? 'The payment QR image could not be loaded. Please contact cafe staff for payment instructions.'
-                      : 'No payment QR is configured for this order. Please contact cafe staff for payment instructions.'}
-                  </p>
-                )
-              )}
-
-              {thankYouMessage && (
-                <p role="status" className="text-xs text-emerald-700">{thankYouMessage}</p>
-              )}
-
-              {/* Payment Action Buttons */}
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={closeTelegramApp}
-                  className="flex-1 rounded-xl bg-gray-100 px-4 py-2.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-200"
-                >
-                  Later paid
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDonePaid}
-                  disabled={Boolean(thankYouMessage)}
-                  className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  Done paid
-                </button>
+                <p className="text-xs text-stone-500">Scan the QR code with your mobile banking app</p>
               </div>
-            </div>
+            ) : (
+              !paymentLink && (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  {paymentQrImageUrl
+                    ? 'The payment QR image could not be loaded. Please contact cafe staff for payment instructions.'
+                    : 'No payment QR is configured for this order. Please contact cafe staff for payment instructions.'}
+                </p>
+              )
+            )}
 
-            <button
-              onClick={fetchMyOrder}
-              className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold py-2.5 rounded-xl transition"
-            >
-              Refresh Status 🔄
-            </button>
-          </div>
-        </>
+            {thankYouMessage && (
+              <p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">{thankYouMessage}</p>
+            )}
+
+            <div className="flex gap-3 pt-1">
+              <button
+                type="button"
+                onClick={closeTelegramApp}
+                className="min-h-12 flex-1 rounded-xl border border-stone-300 bg-white px-4 text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
+              >
+                Pay later
+              </button>
+              <button
+                type="button"
+                onClick={handleDonePaid}
+                disabled={Boolean(thankYouMessage)}
+                className="min-h-12 flex-1 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 disabled:opacity-50"
+              >
+                I have paid
+              </button>
+            </div>
+          </section>
+
+          <button
+            type="button"
+            onClick={fetchMyOrder}
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-stone-100 text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
+          >
+            <Icon name="refresh" size={16} className={loading ? 'animate-spin motion-reduce:animate-none' : ''} />
+            Refresh status
+          </button>
+        </div>
       )}
     </div>
   );
