@@ -15,7 +15,7 @@ const RegisterPage = lazy(() => import('./pages/Admin/RegisterPage'));
 const MyOrderPage = lazy(() => import('./pages/MiniApp/MyOrderPage'));
 const MiniAppProductsPage = lazy(() => import('./pages/MiniApp/ProductsPage'));
 const ProfilePage = lazy(() => import('./pages/MiniApp/ProfilePage'));
-const SpendingPage = lazy(() => import('./pages/MiniApp/Spendingpage'));
+const SpendingPage = lazy(() => import('./pages/MiniApp/SpendingPage'));
 const UsersPage = lazy(() => import('./pages/Admin/UsersPage'));
 const StoresManagementPage = lazy(() => import('./pages/SuperAdmin/StoresManagementPage'));
 
