@@ -136,7 +136,7 @@ export default function CartCheckoutModal({
         {/* Header */}
         <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-5 py-4">
           <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#fff1ed] text-[#d4401f]">
               <Icon name="cart" size={20} />
             </span>
             <div className="leading-tight">
@@ -149,7 +149,7 @@ export default function CartCheckoutModal({
             onClick={onClose}
             disabled={loading}
             aria-label="Close cart"
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-stone-100 text-stone-600 transition-colors hover:bg-stone-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-50"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-stone-100 text-stone-600 transition-colors hover:bg-stone-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] disabled:opacity-50"
           >
             <Icon name="close" size={18} />
           </button>
@@ -175,7 +175,7 @@ export default function CartCheckoutModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="mt-4 min-h-11 rounded-xl border border-stone-300 px-5 text-sm font-semibold text-stone-700 hover:bg-stone-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                className="mt-4 min-h-11 rounded-xl border border-stone-300 px-5 text-sm font-semibold text-stone-700 hover:bg-stone-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c]"
               >
                 Back to menu
               </button>
@@ -213,7 +213,7 @@ export default function CartCheckoutModal({
                         onClick={() => handleUpdateQuantity(item.cart_id, -1)}
                         disabled={loading}
                         aria-label={`Remove one ${item.name}`}
-                        className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-stone-700 shadow-sm transition-colors hover:bg-stone-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-50"
+                        className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-stone-700 shadow-sm transition-colors hover:bg-stone-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] disabled:opacity-50"
                       >
                         <Icon name={item.quantity === 1 ? 'trash' : 'minus'} size={16} />
                       </button>
@@ -223,7 +223,7 @@ export default function CartCheckoutModal({
                         onClick={() => handleUpdateQuantity(item.cart_id, 1)}
                         disabled={loading || item.quantity >= 100}
                         aria-label={`Add one ${item.name}`}
-                        className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-700 text-white shadow-sm transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:opacity-50"
+                        className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#ef5a3c] text-white shadow-sm transition-colors hover:bg-[#dc4a2c] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] disabled:opacity-50"
                       >
                         <Icon name="plus" size={16} />
                       </button>
@@ -245,7 +245,7 @@ export default function CartCheckoutModal({
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
                 placeholder="e.g. Less sweet, extra ice"
-                className="h-12 w-full rounded-xl border border-stone-200 bg-stone-50 px-4 text-base text-stone-800 outline-none placeholder:text-stone-400 focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                className="h-12 w-full rounded-xl border border-stone-200 bg-stone-50 px-4 text-base text-stone-800 outline-none placeholder:text-stone-400 focus:border-[#ef5a3c] focus:bg-white focus:ring-2 focus:ring-[#ef5a3c]/20"
               />
             </div>
           )}
@@ -256,14 +256,14 @@ export default function CartCheckoutModal({
           <div className="space-y-3 border-t border-stone-100 bg-white px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4">
             <div className="flex items-baseline justify-between">
               <span className="text-sm font-semibold text-stone-700">Subtotal (estimate)</span>
-              <span className="text-2xl font-bold text-emerald-700">{formatRiel(subtotal)}</span>
+              <span className="text-2xl font-bold text-[#d4401f]">{formatRiel(subtotal)}</span>
             </div>
             <p className="text-xs text-stone-500">The final total is recalculated with current prices when you place the order.</p>
             <button
               type="button"
               disabled={!canSubmit}
               onClick={handleCheckout}
-              className="flex min-h-14 w-full items-center justify-center rounded-2xl bg-emerald-700 px-4 text-base font-bold text-white shadow-sm transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-300"
+              className="flex min-h-14 w-full items-center justify-center rounded-2xl bg-[#ef5a3c] px-4 text-base font-bold text-white shadow-sm transition-colors hover:bg-[#dc4a2c] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-300"
             >
               {loading ? 'Submitting order…' : `Place order · ${formatRiel(subtotal)}`}
             </button>

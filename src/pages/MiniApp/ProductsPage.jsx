@@ -54,6 +54,33 @@ export default function MiniAppProductsPage() {
   const menuSignalRef = useRef(null);
   const hasMenuRef = useRef(false);
 
+  // Small confirmation when a drink is added for the first time
+  const [toast, setToast] = useState('');
+  useEffect(() => {
+    if (!toast) return undefined;
+    const id = window.setTimeout(() => setToast(''), 1800);
+    return () => window.clearTimeout(id);
+  }, [toast]);
+
+  // Keep the cart if the customer closes the app by accident (saved per order session)
+  const cartKey = session?.id ? `mini_cart_${session.id}` : null;
+  const [cartReadyKey, setCartReadyKey] = useState(null);
+  useEffect(() => {
+    if (!cartKey || cartReadyKey === cartKey) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(cartKey) || '[]');
+      if (Array.isArray(saved) && saved.length) setCart(saved);
+    } catch { /* ignore broken storage */ }
+    setCartReadyKey(cartKey);
+  }, [cartKey, cartReadyKey]);
+  useEffect(() => {
+    if (!cartKey || cartReadyKey !== cartKey) return;
+    try {
+      if (cart.length) localStorage.setItem(cartKey, JSON.stringify(cart));
+      else localStorage.removeItem(cartKey);
+    } catch { /* storage may be unavailable */ }
+  }, [cart, cartKey, cartReadyKey]);
+
   const fetchSession = useCallback((signal) => {
     if (sessionRequestRef.current) return sessionRequestRef.current;
     if (launch.error) {
@@ -198,8 +225,21 @@ export default function MiniAppProductsPage() {
         quantity,
       }];
     });
+    if (!existing) {
+      try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch { /* optional */ }
+      setToast(`Added ${product.name}`);
+    }
     setSugarProduct(null);
     return true;
+  };
+
+  const handleDecrease = (product) => {
+    const cartId = `${product.id}:nosugar`;
+    setCart((previousCart) =>
+      previousCart
+        .map((item) => (item.cart_id === cartId ? { ...item, quantity: item.quantity - 1 } : item))
+        .filter((item) => item.quantity > 0)
+    );
   };
 
   const visibleProducts = useMemo(() => {
@@ -231,21 +271,37 @@ export default function MiniAppProductsPage() {
   );
 
   const chipClass = (active) =>
-    `min-h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1 ${
-      active ? 'bg-emerald-600 text-white shadow-sm' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+    `min-h-10 shrink-0 whitespace-nowrap rounded-full px-4 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] focus-visible:ring-offset-1 ${
+      active ? 'bg-[#1f1a17] text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
     }`;
 
   return (
-    <div className={`min-h-screen bg-stone-50 text-stone-800 ${totalCartItems > 0 ? 'pb-32' : 'pb-10'}`}>
-      <SessionBanner
-        session={session}
-        sessionVerified={sessionVerified}
-        sessionError={sessionError}
-        onRefresh={refreshSessionStatus}
-      />
+    <div className={`min-h-screen bg-[#f6f4f1] text-stone-800 ${totalCartItems > 0 ? 'pb-32' : 'pb-10'}`}>
+      <header className="sticky top-0 z-20 shadow-sm">
+        <SessionBanner
+          session={session}
+          sessionVerified={sessionVerified}
+          sessionError={sessionError}
+          onRefresh={refreshSessionStatus}
+          onMyOrder={() => navigate('/my-order')}
+        />
+        <nav aria-label="Product categories" className="no-scrollbar flex gap-2 overflow-x-auto border-b border-stone-200 bg-white px-4 py-3">
+          <button type="button" onClick={() => setSelectedCategory('all')} aria-pressed={selectedCategory === 'all'} className={chipClass(selectedCategory === 'all')}>
+            All items
+          </button>
+          {categories.map((category) => {
+            const active = String(selectedCategory) === String(category.id);
+            return (
+              <button key={category.id} type="button" onClick={() => setSelectedCategory(category.id)} aria-pressed={active} className={chipClass(active)}>
+                {category.name}
+              </button>
+            );
+          })}
+        </nav>
+      </header>
 
       {initDataAvailable && (
-        <section aria-label="Private Telegram notifications" className="mx-4 mt-3 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <section aria-label="Private Telegram notifications" className="mx-4 mt-4 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
             <Icon name="bell" size={18} />
           </span>
@@ -255,7 +311,7 @@ export default function MiniAppProductsPage() {
               Your ordering is not affected. If you want private messages from the cafe, open the bot and voluntarily press <strong>Start</strong>.
             </p>
             <a
-              className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-emerald-300 bg-white px-4 text-sm font-semibold text-emerald-800 transition-colors hover:bg-emerald-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-amber-300 bg-white px-4 text-sm font-semibold text-amber-900 transition-colors hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c]"
               href="https://t.me/ahseven_bot?start=order_notifications"
               target="_blank"
               rel="noreferrer"
@@ -279,21 +335,7 @@ export default function MiniAppProductsPage() {
         </div>
       )}
 
-      <nav aria-label="Product categories" className="no-scrollbar sticky top-14 z-10 mt-3 flex gap-2 overflow-x-auto border-y border-stone-200 bg-white/95 px-4 py-3 backdrop-blur">
-        <button type="button" onClick={() => setSelectedCategory('all')} aria-pressed={selectedCategory === 'all'} className={chipClass(selectedCategory === 'all')}>
-          All items
-        </button>
-        {categories.map((category) => {
-          const active = String(selectedCategory) === String(category.id);
-          return (
-            <button key={category.id} type="button" onClick={() => setSelectedCategory(category.id)} aria-pressed={active} className={chipClass(active)}>
-              {category.name}
-            </button>
-          );
-        })}
-      </nav>
-
-      <div className="mx-auto max-w-3xl px-4 pb-2 pt-4">
+      <div className="mx-auto max-w-3xl px-4 pb-3 pt-4">
         <label htmlFor="menu-search" className="sr-only">Search the menu</label>
         <div className="relative">
           <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-stone-400">
@@ -305,7 +347,7 @@ export default function MiniAppProductsPage() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search drinks and treats"
-            className="h-12 w-full rounded-full border border-stone-200 bg-white pl-11 pr-4 text-sm text-stone-800 shadow-sm outline-none placeholder:text-stone-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+            className="h-12 w-full rounded-full border border-stone-200 bg-white pl-11 pr-4 text-base text-stone-800 shadow-sm outline-none placeholder:text-stone-400 focus:border-[#ef5a3c] focus:ring-2 focus:ring-[#ef5a3c]/20"
           />
         </div>
       </div>
@@ -318,29 +360,35 @@ export default function MiniAppProductsPage() {
         orderingOpen={orderingOpen}
         cartByProduct={cartByProduct}
         onProductClick={handleProductClick}
+        onDecrease={handleDecrease}
       />
+
+      {/* Confirmation toast */}
+      <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-[calc(6.5rem+env(safe-area-inset-bottom))] z-30 flex justify-center px-4">
+        {toast && <span className="rounded-full bg-stone-900/90 px-4 py-2 text-sm font-medium text-white shadow-lg">{toast}</span>}
+      </div>
 
       {totalCartItems > 0 && (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <button
             type="button"
             onClick={() => setShowCheckout(true)}
-            className="pointer-events-auto mx-auto flex min-h-14 w-full max-w-3xl items-center justify-between gap-3 rounded-2xl bg-emerald-700 px-4 py-2.5 text-white shadow-lg shadow-emerald-900/25 transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2"
+            className="pointer-events-auto mx-auto flex min-h-16 w-full max-w-3xl items-center justify-between gap-3 rounded-3xl bg-[#1f1a17] px-4 py-2.5 text-white shadow-xl shadow-black/25 transition-colors hover:bg-[#2b2420] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] focus-visible:ring-offset-2"
             aria-label={`View cart, ${totalCartItems} ${totalCartItems === 1 ? 'item' : 'items'}, total ${formatRiel(totalCartPrice)}`}
           >
             <span className="flex items-center gap-3">
-              <span className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
+              <span className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10">
                 <Icon name="cart" size={20} />
-                <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-400 px-1 text-[11px] font-bold text-emerald-950">
+                <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ef5a3c] px-1 text-[11px] font-bold text-white">
                   {totalCartItems}
                 </span>
               </span>
               <span className="text-left leading-tight">
-                <span className="block text-xs text-emerald-100">{totalCartItems === 1 ? '1 item' : `${totalCartItems} items`} selected</span>
+                <span className="block text-xs text-stone-400">{totalCartItems === 1 ? '1 item' : `${totalCartItems} items`}</span>
                 <span className="block text-base font-bold">{formatRiel(totalCartPrice)}</span>
               </span>
             </span>
-            <span className="rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-emerald-800">
+            <span className="rounded-2xl bg-[#ef5a3c] px-5 py-3 text-sm font-bold text-white">
               View cart
             </span>
           </button>

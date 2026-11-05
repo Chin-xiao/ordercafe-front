@@ -122,13 +122,13 @@ export default function MyOrderPage() {
 
   return (
     <div className="mx-auto min-h-screen max-w-lg bg-stone-50 p-4 pb-[calc(2rem+env(safe-area-inset-bottom))] text-stone-800">
-      <header className="mb-4 flex items-center gap-3 rounded-2xl bg-emerald-700 p-4 text-white shadow-sm">
+      <header className="mb-4 flex items-center gap-3 rounded-2xl bg-[#1f1a17] p-4 text-white shadow-sm">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
           <Icon name="receipt" size={22} />
         </span>
         <div className="leading-tight">
           <h1 className="text-lg font-bold">Order tracking</h1>
-          <p className="mt-0.5 text-xs text-emerald-100">Live updates from the cafe team</p>
+          <p className="mt-0.5 text-xs text-stone-400">Live updates from the cafe team</p>
         </div>
       </header>
 
@@ -142,7 +142,7 @@ export default function MyOrderPage() {
           <button
             type="button"
             onClick={() => navigate('/menu')}
-            className="mt-5 min-h-12 rounded-xl bg-emerald-700 px-6 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2"
+            className="mt-5 min-h-12 rounded-xl bg-[#ef5a3c] px-6 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#dc4a2c] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] focus-visible:ring-offset-2"
           >
             Browse menu and order
           </button>
@@ -175,13 +175,13 @@ export default function MyOrderPage() {
                   return (
                     <li key={label} className="flex flex-1 items-center last:flex-none">
                       <div className="flex flex-col items-center gap-1">
-                        <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${done ? 'bg-emerald-600 text-white' : 'bg-white text-stone-400 ring-1 ring-stone-200'}`}>
+                        <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${done ? 'bg-[#ef5a3c] text-white' : 'bg-white text-stone-400 ring-1 ring-stone-200'}`}>
                           {done ? <Icon name="check" size={14} /> : index + 1}
                         </span>
                         <span className={`text-[11px] font-medium ${done ? 'text-stone-800' : 'text-stone-400'}`}>{label}</span>
                       </div>
                       {index < STEPS.length - 1 && (
-                        <span className={`mx-2 mb-4 h-0.5 flex-1 rounded-full ${index < status.step ? 'bg-emerald-600' : 'bg-stone-200'}`} />
+                        <span className={`mx-2 mb-4 h-0.5 flex-1 rounded-full ${index < status.step ? 'bg-[#ef5a3c]' : 'bg-stone-200'}`} />
                       )}
                     </li>
                   );
@@ -239,7 +239,7 @@ export default function MyOrderPage() {
 
             <div className="flex items-center justify-between rounded-xl bg-stone-50 px-4 py-3">
               <span className="text-sm font-semibold text-stone-700">Total</span>
-              <span className="text-xl font-bold text-emerald-700">{formatRiel(order?.total_amount ?? order?.total_price)}</span>
+              <span className="text-xl font-bold text-[#d4401f]">{formatRiel(order?.total_amount ?? order?.total_price)}</span>
             </div>
           </section>
 
@@ -251,7 +251,7 @@ export default function MyOrderPage() {
               <button
                 type="button"
                 onClick={handlePayNow}
-                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 active:scale-[0.99]"
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#ef5a3c] px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#dc4a2c] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] focus-visible:ring-offset-2 active:scale-[0.99]"
               >
                 <Icon name="card" size={18} />
                 Pay now
@@ -296,7 +296,7 @@ export default function MyOrderPage() {
                 type="button"
                 onClick={handleDonePaid}
                 disabled={Boolean(thankYouMessage)}
-                className="min-h-12 flex-1 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 disabled:opacity-50"
+                className="min-h-12 flex-1 rounded-xl bg-[#ef5a3c] px-4 text-sm font-bold text-white transition-colors hover:bg-[#dc4a2c] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] focus-visible:ring-offset-2 disabled:opacity-50"
               >
                 I have paid
               </button>
@@ -310,6 +310,13 @@ export default function MyOrderPage() {
           >
             <Icon name="refresh" size={16} className={loading ? 'animate-spin motion-reduce:animate-none' : ''} />
             Refresh status
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/menu')}
+            className="flex min-h-12 w-full items-center justify-center rounded-xl border border-stone-300 bg-white text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c]"
+          >
+            Back to menu
           </button>
         </div>
       )}

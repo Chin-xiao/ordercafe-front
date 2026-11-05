@@ -11,7 +11,7 @@ const CSS = `
 .sugar-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:${THUMB}px;height:30px;margin-top:1px;border-radius:999px;background:#fff;border:1px solid #d6d3d1;box-shadow:0 2px 8px rgba(0,0,0,.22);cursor:grab}
 .sugar-range::-moz-range-thumb{width:${THUMB - 2}px;height:28px;border-radius:999px;background:#fff;border:1px solid #d6d3d1;box-shadow:0 2px 8px rgba(0,0,0,.22);cursor:grab}
 .sugar-range:active::-webkit-slider-thumb{cursor:grabbing;transform:scale(1.05)}
-.sugar-range:focus-visible{outline:2px solid #10b981;outline-offset:6px;border-radius:999px}
+.sugar-range:focus-visible{outline:2px solid #ef5a3c;outline-offset:6px;border-radius:999px}
 `;
 
 // Position that lines up with the handle centre for a value from 0 to 1
@@ -69,13 +69,13 @@ export default function SugarSelectionModal({ product, sugarOptions, onClose, on
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 id="sugar-selection-title" className="truncate text-lg font-bold text-stone-900">{product.name}</h2>
-            <p className="mt-1 text-sm font-semibold text-emerald-700">{formatRiel(product.price)}</p>
+            <p className="mt-1 text-sm font-semibold text-[#d4401f]">{formatRiel(product.price)}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close sugar selection"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-600 transition-colors hover:bg-stone-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-600 transition-colors hover:bg-stone-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c]"
           >
             <Icon name="close" size={18} />
           </button>
@@ -85,7 +85,7 @@ export default function SugarSelectionModal({ product, sugarOptions, onClose, on
         <div className="mt-6 rounded-2xl bg-stone-50 p-4">
           <div className="flex items-end justify-between">
             <p id="sugar-label" className="text-sm font-semibold text-stone-800">Sugar level</p>
-            <p aria-live="polite" className={`text-3xl font-bold leading-none ${chosen ? 'text-emerald-700' : 'text-stone-300'}`}>
+            <p aria-live="polite" className={`text-3xl font-bold leading-none ${chosen ? 'text-[#d4401f]' : 'text-stone-300'}`}>
               {chosen ? `${options[index]}%` : '–'}
             </p>
           </div>
@@ -98,7 +98,7 @@ export default function SugarSelectionModal({ product, sugarOptions, onClose, on
               {/* track + fill */}
               <div className="absolute inset-x-0 top-1/2 h-3 -translate-y-1/2 overflow-hidden rounded-full bg-stone-200">
                 <div
-                  className={`h-full rounded-full transition-[width] duration-150 ${chosen ? 'bg-emerald-700' : 'bg-stone-300'}`}
+                  className={`h-full rounded-full transition-[width] duration-150 ${chosen ? 'bg-[#ef5a3c]' : 'bg-stone-300'}`}
                   style={{ width: at(fraction) }}
                 />
               </div>
@@ -127,7 +127,7 @@ export default function SugarSelectionModal({ product, sugarOptions, onClose, on
             {labelIndexes.map((i) => (
               <span
                 key={i}
-                className={`absolute top-0 -translate-x-1/2 text-xs font-medium ${chosen && i === index ? 'text-emerald-700' : 'text-stone-400'}`}
+                className={`absolute top-0 -translate-x-1/2 text-xs font-medium ${chosen && i === index ? 'text-[#d4401f]' : 'text-stone-400'}`}
                 style={{ left: at(last === 0 ? 0 : i / last) }}
               >
                 {options[i]}%
@@ -147,7 +147,7 @@ export default function SugarSelectionModal({ product, sugarOptions, onClose, on
               onClick={() => { setQuantity((current) => Math.max(1, current - 1)); setError(''); }}
               disabled={quantity <= 1}
               aria-label="Decrease quantity"
-              className="flex h-11 w-11 items-center justify-center rounded-xl bg-stone-100 text-stone-700 transition-colors hover:bg-stone-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-40"
+              className="flex h-11 w-11 items-center justify-center rounded-xl bg-stone-100 text-stone-700 transition-colors hover:bg-stone-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] disabled:opacity-40"
             >
               <Icon name="minus" size={18} />
             </button>
@@ -157,7 +157,7 @@ export default function SugarSelectionModal({ product, sugarOptions, onClose, on
               onClick={() => { setQuantity((current) => Math.min(100, current + 1)); setError(''); }}
               disabled={quantity >= 100}
               aria-label="Increase quantity"
-              className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-700 text-white transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-1 disabled:opacity-40"
+              className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#ef5a3c] text-white transition-colors hover:bg-[#dc4a2c] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] focus-visible:ring-offset-1 disabled:opacity-40"
             >
               <Icon name="plus" size={18} />
             </button>
@@ -174,7 +174,7 @@ export default function SugarSelectionModal({ product, sugarOptions, onClose, on
             }
           }}
           disabled={sugarPercent === null}
-          className="mt-6 min-h-12 w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-300"
+          className="mt-6 min-h-12 w-full rounded-xl bg-[#ef5a3c] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#dc4a2c] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-300"
         >
           Add to order · {formatRiel(Number(product.price) * quantity)}
         </button>

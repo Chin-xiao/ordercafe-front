@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Icon } from '../ui';
 import { formatDateTime, formatRemainingTime, getSessionStatus, isOrderSessionOpen } from '../../utils/orderSession';
 
 const INITIAL_NOW = Date.now();
+const timeOf = (value) => new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
-export default function SessionBanner({ session, sessionVerified, sessionError, onRefresh }) {
+export default function SessionBanner({ session, sessionVerified, sessionError, onRefresh, onMyOrder }) {
   const [now, setNow] = useState(INITIAL_NOW);
-  
+
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
@@ -19,66 +21,82 @@ export default function SessionBanner({ session, sessionVerified, sessionError, 
     : null;
   const nearExpiration = orderingOpen && secondsRemaining !== null && secondsRemaining <= 300;
 
-  return (
-    <>
-      <header className="sticky top-0 z-25 flex items-center justify-between gap-3 border-b border-emerald-800/10 bg-emerald-700 px-4 py-3 text-white shadow-sm">
-        <div>
-          <h1 className="text-base font-bold leading-tight">{session?.title || 'Cafe Menu'}</h1>
-          <p className="mt-0.5 text-xs text-emerald-100">Fresh from the cafe</p>
-        </div>
-        <div className="max-w-[45%] rounded-full bg-emerald-800 px-3 py-1.5 text-right text-[11px] font-semibold leading-tight">
-          {orderingOpen
-            ? `Open · Closes ${new Date(session.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
-            : sessionVerified
-              ? (session ? (status.toLowerCase() === 'expired' ? 'Expired' : 'Ordering closed') : 'No Session')
-              : 'Connecting...'}
-        </div>
-      </header>
+  const refreshButton = (label) => (
+    <button
+      type="button"
+      onClick={onRefresh}
+      className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-white/10 px-4 text-sm font-semibold text-white transition-colors hover:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c]"
+    >
+      <Icon name="refresh" size={16} />
+      {label}
+    </button>
+  );
 
-      <section
-        role={nearExpiration ? 'alert' : undefined}
-        className={`mx-4 mt-4 rounded-xl border p-3 text-sm ${
-          orderingOpen
-            ? nearExpiration
-              ? 'border-amber-300 bg-amber-50 text-amber-900'
-              : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-            : !sessionVerified
-              ? 'border-sky-200 bg-sky-50 text-sky-900'
-              : 'border-red-200 bg-red-50 text-red-800'
-        }`}
-      >
-        {orderingOpen ? (
-          <>
-            <p className="font-bold">{session.title}</p>
-            <p>Ordering closes at {new Date(session.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {formatDateTime(session.expires_at)}</p>
-            <p className="font-semibold">
-              {nearExpiration ? 'Hurry, ordering closes soon: ' : 'Time remaining: '}
-              {formatRemainingTime(session.expires_at, now)}
-            </p>
-          </>
-        ) : !sessionVerified && !session ? (
-          <div className="flex items-center space-x-3">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-sky-700"></div>
-            <div>
-              <p className="font-bold">Loading session...</p>
-              <p className="text-xs mt-0.5">Checking kitchen status instantly.</p>
-            </div>
-          </div>
-        ) : (
-          <>
-            <p className="font-bold">Ordering is closed</p>
-            <p>
-              {session?.expires_at
-                ? `This ordering session is ${status.toLowerCase()}. It closed at ${formatDateTime(session.expires_at)}.`
-                : 'There is no currently open order session.'}
-            </p>
-            {sessionError && <p className="mt-1">{sessionError}</p>}
-            <button type="button" onClick={onRefresh} className="mt-2 min-h-11 font-semibold underline">
-              Refresh session status
-            </button>
-          </>
+  let statusRow;
+  if (orderingOpen) {
+    statusRow = (
+      <div role={nearExpiration ? 'alert' : 'status'} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className={`inline-flex min-h-9 items-center gap-2 rounded-full px-3 text-xs font-semibold ${nearExpiration ? 'bg-amber-400/15 text-amber-300' : 'bg-emerald-400/15 text-emerald-300'}`}>
+          <span aria-hidden="true" className={`h-2 w-2 rounded-full ${nearExpiration ? 'animate-pulse bg-amber-400 motion-reduce:animate-none' : 'bg-emerald-400'}`} />
+          {nearExpiration ? 'Hurry, ordering closes soon' : `Open · Closes ${timeOf(session.expires_at)}`}
+        </span>
+        <span className={`text-xs font-medium ${nearExpiration ? 'text-amber-300' : 'text-stone-300'}`}>
+          Time left: {formatRemainingTime(session.expires_at, now)}
+        </span>
+      </div>
+    );
+  } else if (!sessionVerified) {
+    statusRow = sessionError ? (
+      <div role="alert" className="space-y-2">
+        <p className="text-sm text-amber-300">{sessionError}</p>
+        {refreshButton('Retry')}
+      </div>
+    ) : (
+      <div role="status" className="flex items-center gap-3 text-stone-300">
+        <span aria-hidden="true" className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-[#ef5a3c] motion-reduce:animate-none" />
+        <span className="text-sm">
+          <span className="font-semibold text-white">Connecting…</span> Checking kitchen status.
+        </span>
+      </div>
+    );
+  } else {
+    statusRow = (
+      <div role="status" className="space-y-2">
+        <span className="inline-flex min-h-9 items-center gap-2 rounded-full bg-white/10 px-3 text-xs font-semibold text-stone-200">
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-red-400" />
+          {session ? (status.toLowerCase() === 'expired' ? 'Expired' : 'Ordering closed') : 'No session'}
+        </span>
+        <p className="text-sm text-stone-300">
+          {session?.expires_at
+            ? `This ordering session is ${status.toLowerCase()}. It closed at ${formatDateTime(session.expires_at)}.`
+            : 'There is no currently open order session.'}
+        </p>
+        {sessionError && <p className="text-sm text-amber-300">{sessionError}</p>}
+        {refreshButton('Refresh session status')}
+      </div>
+    );
+  }
+
+  return (
+    <section aria-label="Order session" className="bg-[#1f1a17] px-4 pb-3 pt-3 text-white">
+      <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+        <div className="min-w-0 leading-tight">
+          <h1 className="truncate text-lg font-bold">{session?.title || 'Cafe Menu'}</h1>
+          <p className="text-xs text-stone-400">Fresh from the cafe</p>
+        </div>
+        {onMyOrder && (
+          <button
+            type="button"
+            onClick={onMyOrder}
+            className="flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-3.5 text-sm font-semibold text-white transition-colors hover:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c]"
+          >
+            <Icon name="receipt" size={16} />
+            My order
+          </button>
         )}
-      </section>
-    </>
+      </div>
+
+      <div className="mx-auto mt-3 max-w-3xl">{statusRow}</div>
+    </section>
   );
 }

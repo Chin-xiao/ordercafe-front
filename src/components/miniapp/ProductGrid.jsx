@@ -1,26 +1,34 @@
 import React, { useState } from 'react';
 import { formatRiel } from '../../utils/currency';
+import { Icon, Skeleton, SkeletonStyles } from '../ui';
 
-export const ProductImage = React.memo(function ProductImage({ product, eager = false }) {
+// Still exported by name in case another file imports it
+export const ProductImage = React.memo(function ProductImage({ product, eager = false, square = false, className = '' }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
-  
+  const ratio = square ? 'aspect-square' : 'aspect-[4/3]';
+
   if (!product?.image_url || failed) {
     return (
-      <div className="flex aspect-[4/3] w-full items-center justify-center bg-stone-100 text-xs text-stone-400" aria-label={`Image unavailable for ${product?.name || 'item'}`}>
-        Image unavailable
+      <div
+        className={`flex ${ratio} w-full flex-col items-center justify-center gap-1 bg-stone-100 text-stone-300 ${className}`}
+        role="img"
+        aria-label={`Image unavailable for ${product?.name || 'item'}`}
+      >
+        <Icon name="cup" size={square ? 40 : 32} />
+        <span className="text-[11px] text-stone-400">No photo</span>
       </div>
     );
   }
 
   return (
-    <div className="relative aspect-[4/3] w-full overflow-hidden bg-stone-100">
+    <div className={`relative ${ratio} w-full overflow-hidden bg-stone-100 ${className}`}>
       {!loaded && <div aria-hidden="true" className="absolute inset-0 bg-stone-100" />}
       <img
         src={product.image_url}
         alt={product.name}
         width="480"
-        height="360"
+        height={square ? '480' : '360'}
         loading={eager ? 'eager' : 'lazy'}
         decoding="async"
         fetchPriority={eager ? 'high' : 'auto'}
@@ -32,6 +40,90 @@ export const ProductImage = React.memo(function ProductImage({ product, eager = 
   );
 });
 
+function ProductCard({ product, index, orderingOpen, entries, onProductClick, onDecrease }) {
+  const inCart = entries.reduce((sum, item) => sum + item.quantity, 0);
+  const unavailable = product.is_available === false;
+  const disabled = !orderingOpen || unavailable;
+  const needsSugar = Boolean(product.requires_sugar);
+  // Drinks without a sugar choice can be changed right on the card
+  const simpleEntry = !needsSugar ? entries.find((item) => item.cart_id === `${product.id}:nosugar`) : null;
+  const sugarEntries = entries.filter((item) => item.sugar_percent !== null && item.sugar_percent !== undefined);
+
+  return (
+    <li className={`flex flex-col overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-stone-200/70 ${unavailable ? 'opacity-80' : ''}`}>
+      <button
+        type="button"
+        onClick={() => onProductClick(product)}
+        disabled={disabled}
+        aria-label={needsSugar ? `Choose sugar for ${product.name}` : `Add ${product.name}`}
+        className="relative block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#ef5a3c] disabled:cursor-not-allowed"
+      >
+        <ProductImage key={product.image_url} product={product} eager={index < 2} square className={unavailable ? 'grayscale' : ''} />
+        {inCart > 0 && (
+          <span className="absolute left-2.5 top-2.5 rounded-full bg-[#ef5a3c] px-2.5 py-1 text-xs font-bold text-white shadow">
+            {inCart} in cart
+          </span>
+        )}
+        {unavailable && (
+          <span className="absolute inset-x-0 bottom-2.5 mx-auto w-fit rounded-full bg-stone-900/80 px-3 py-1 text-xs font-semibold text-white">
+            Unavailable
+          </span>
+        )}
+      </button>
+
+      <div className="flex flex-1 flex-col p-3">
+        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-stone-900">{product.name}</h3>
+        {product.description && <p className="mt-0.5 line-clamp-1 text-xs text-stone-500">{product.description}</p>}
+        {sugarEntries.length > 0 && (
+          <p className="mt-1 text-[11px] font-medium text-[#d4401f]">
+            In cart: {sugarEntries.map((item) => `${item.sugar_percent}% × ${item.quantity}`).join(' · ')}
+          </p>
+        )}
+
+        <div className="mt-auto flex items-center justify-between gap-2 pt-3">
+          <span className="text-base font-bold text-stone-900">{formatRiel(product.price)}</span>
+
+          {unavailable ? (
+            <span className="text-xs font-medium text-stone-400">Currently unavailable</span>
+          ) : simpleEntry ? (
+            <div className="flex items-center rounded-full bg-stone-100 p-0.5">
+              <button
+                type="button"
+                onClick={() => onDecrease(product)}
+                disabled={disabled}
+                aria-label={`Remove one ${product.name}`}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-stone-700 hover:bg-stone-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] disabled:opacity-40"
+              >
+                <Icon name={simpleEntry.quantity === 1 ? 'trash' : 'minus'} size={16} />
+              </button>
+              <span aria-live="polite" className="w-7 text-center text-sm font-bold text-stone-900">{simpleEntry.quantity}</span>
+              <button
+                type="button"
+                onClick={() => onProductClick(product)}
+                disabled={disabled || simpleEntry.quantity >= 100}
+                aria-label={`Add one ${product.name}`}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#ef5a3c] text-white hover:bg-[#dc4a2c] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] focus-visible:ring-offset-1 disabled:opacity-40"
+              >
+                <Icon name="plus" size={16} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onProductClick(product)}
+              disabled={disabled}
+              aria-label={needsSugar ? `Choose sugar for ${product.name}` : `Add ${product.name}`}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-[#ef5a3c] text-white shadow-sm transition-colors hover:bg-[#dc4a2c] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef5a3c] focus-visible:ring-offset-2 disabled:bg-stone-200 disabled:text-stone-400 disabled:shadow-none"
+            >
+              <Icon name="plus" size={20} />
+            </button>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
 export default function ProductGrid({
   products = [],
   loading = false,
@@ -40,22 +132,27 @@ export default function ProductGrid({
   orderingOpen = true,
   cartByProduct = new Map(),
   onProductClick = () => {},
-  onRetryMenu = () => {}
+  onDecrease = () => {},
+  onRetryMenu,
 }) {
   // Safely handle cartByProduct even if it's passed as a plain object or undefined
-  const cartMap = cartByProduct instanceof Map 
-    ? cartByProduct 
+  const cartMap = cartByProduct instanceof Map
+    ? cartByProduct
     : new Map(Object.entries(cartByProduct || {}));
+
+  const wrap = 'mx-auto grid max-w-3xl grid-cols-2 gap-3 px-4 pt-2 sm:grid-cols-3';
 
   if (loading && products.length === 0) {
     return (
-      <div className="mx-auto grid max-w-3xl grid-cols-2 gap-3 p-4 sm:grid-cols-3 sm:gap-4">
-        {[0, 1, 2, 3, 4, 5].map((item) => (
-          <div key={item} className="overflow-hidden rounded-2xl border border-stone-200 bg-white" aria-hidden="true">
-            <div className="aspect-[4/3] bg-stone-100" />
+      <div role="status" aria-busy="true" className={wrap}>
+        <SkeletonStyles />
+        <span className="sr-only">Loading menu…</span>
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="overflow-hidden rounded-3xl bg-white ring-1 ring-stone-200/70">
+            <Skeleton className="aspect-square w-full !rounded-none" />
             <div className="space-y-2 p-3">
-              <div className="h-4 w-3/4 rounded bg-stone-100" />
-              <div className="h-3 w-1/3 rounded bg-stone-100" />
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-5 w-1/3" />
             </div>
           </div>
         ))}
@@ -63,75 +160,56 @@ export default function ProductGrid({
     );
   }
 
-  if (error) {
-    return (
-      <div className="mx-auto max-w-md p-8 text-center">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
-          <p className="text-sm font-semibold text-red-800">Server Error</p>
-          <p className="mt-1 text-xs text-red-600">{error.message || 'Unable to load products for this store.'}</p>
-          <button
-            onClick={onRetryMenu}
-            className="mt-4 rounded-xl bg-red-700 px-4 py-2 text-xs font-semibold text-white transition hover:bg-red-800"
-          >
-            Retry menu
-          </button>
+  if (products.length === 0) {
+    if (error) {
+      // The menu page already shows the error with a retry button.
+      // If a parent passes onRetryMenu instead, show the panel here.
+      if (!onRetryMenu) return null;
+      const message = typeof error === 'string' ? error : error?.message;
+      return (
+        <div className="mx-auto max-w-md p-8 text-center">
+          <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-6">
+            <p className="text-sm font-semibold text-red-800">Could not load the menu</p>
+            <p className="mt-1 text-sm text-red-700">{message || 'Unable to load products for this store.'}</p>
+            <button
+              type="button"
+              onClick={onRetryMenu}
+              className="mt-4 min-h-11 rounded-xl bg-red-700 px-5 text-sm font-semibold text-white hover:bg-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+            >
+              Retry menu
+            </button>
+          </div>
         </div>
+      );
+    }
+    return (
+      <div className="mx-auto flex max-w-3xl flex-col items-center px-6 py-14 text-center">
+        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-stone-100 text-stone-400">
+          <Icon name="search" size={26} />
+        </span>
+        <p className="mt-3 text-sm font-semibold text-stone-900">
+          {search.trim() ? `No results for “${search.trim()}”` : 'No products are available yet'}
+        </p>
+        <p className="mt-1 text-sm text-stone-500">
+          {search.trim() ? 'Try a different word or pick another category.' : 'Please check again in a moment.'}
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto grid max-w-3xl grid-cols-2 gap-3 p-4 sm:grid-cols-3 sm:gap-4">
-      {products.map((product, index) => {
-        const unavailable = product.is_available === false;
-        const productIdStr = String(product.id);
-        const cartItems = cartMap.get(productIdStr);
-
-        return (
-          <article key={product.id} className={`flex flex-col justify-between overflow-hidden rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md ${unavailable ? 'border-stone-200 opacity-75' : 'border-stone-100'}`}>
-            <div>
-              <div className="relative">
-                <ProductImage key={product.image_url} product={product} eager={index < 2} />
-                {unavailable && (
-                  <span className="absolute left-2 top-2 rounded-full bg-stone-900/80 px-2.5 py-1 text-[10px] font-semibold text-white">
-                    Unavailable
-                  </span>
-                )}
-              </div>
-              <div className="p-3 sm:p-4">
-                <h2 className="line-clamp-2 min-h-10 text-sm font-bold text-stone-900">{product.name}</h2>
-                {product.description && <p className="mt-1 line-clamp-2 min-h-8 text-xs leading-relaxed text-stone-500">{product.description}</p>}
-                <p className="mt-2 text-sm font-bold text-emerald-700">{formatRiel(product.price)}</p>
-                <p className={`mt-1 text-[11px] font-medium ${unavailable ? 'text-red-700' : 'text-stone-500'}`}>
-                  {unavailable ? 'Currently unavailable' : product.is_available === true ? 'Available' : 'Availability not provided'}
-                </p>
-              </div>
-            </div>
-            <div className="p-3 pt-0">
-              {cartItems && cartItems.length > 0 && (
-                <p className="mb-2 text-[11px] text-stone-500">
-                  In cart: {cartItems
-                    .map((item) => item.sugar_percent !== null && item.sugar_percent !== undefined ? `${item.sugar_percent}% × ${item.quantity}` : `${item.quantity}`)
-                    .join(' · ')}
-                </p>
-              )}
-              <button
-                onClick={() => onProductClick(product)}
-                disabled={!orderingOpen || unavailable}
-                className="w-full min-h-11 rounded-xl bg-emerald-700 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-stone-300"
-              >
-                {unavailable ? 'Unavailable' : product.requires_sugar ? '+ Choose Sugar & Add' : '+ Add to Order'}
-              </button>
-            </div>
-          </article>
-        );
-      })}
-      {products.length === 0 && !error && (
-        <div className="col-span-full py-12 text-center">
-          <p className="text-sm font-medium text-stone-600">No products are available in this store yet.</p>
-          <p className="mt-1 text-xs text-stone-400">Add products from your admin panel to start selling.</p>
-        </div>
-      )}
-    </div>
+    <ul className={wrap}>
+      {products.map((product, index) => (
+        <ProductCard
+          key={product.id}
+          product={product}
+          index={index}
+          orderingOpen={orderingOpen}
+          entries={cartMap.get(String(product.id)) || []}
+          onProductClick={onProductClick}
+          onDecrease={onDecrease}
+        />
+      ))}
+    </ul>
   );
 }
