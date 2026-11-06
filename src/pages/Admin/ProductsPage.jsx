@@ -1,5 +1,5 @@
 // src/pages/admin/ProductsPage.jsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../../api/axios';
 import { cachedGet, peek } from '../../api/cachedGet';
@@ -10,6 +10,15 @@ import CoffeeLoader from '../../components/CoffeeLoader';
 const unwrap = (res) => {
   const list = res?.data?.data ?? res?.data;
   return Array.isArray(list) ? list : null;
+};
+
+const fetchCategoryList = async () => {
+  const response = await api.get('/admin/categories');
+  const categoryList = unwrap(response);
+  if (!categoryList) {
+    throw new Error('The API returned an invalid categories response.');
+  }
+  return categoryList;
 };
 
 const EMPTY_FORM = { name: '', categoryId: '', price: '', imageUrl: '', requiresSugar: false };
@@ -41,13 +50,15 @@ export default function ProductsPage() {
 
   // Show the last known data instantly (if any) and refresh it quietly in the background
   const cachedProducts = unwrap(peek('/admin/products'));
-  const cachedCategories = unwrap(peek('/admin/categories'));
-  const hasCache = Boolean(cachedProducts && cachedCategories);
+  const hasCache = Boolean(cachedProducts);
 
   const [products, setProducts] = useState(cachedProducts || []);
-  const [categories, setCategories] = useState(cachedCategories || []);
+  const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [categoryError, setCategoryError] = useState('');
   const [loading, setLoading] = useState(!hasCache);
   const [loadError, setLoadError] = useState('');
+  const categoryRequestId = useRef(0);
 
   const [cat, setCat] = useState('all');
   const [status, setStatus] = useState('all');
@@ -61,22 +72,42 @@ export default function ProductsPage() {
 
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
+  const loadCategories = async ({ clear = false } = {}) => {
+    const requestId = ++categoryRequestId.current;
+    setCategoriesLoading(true);
+    setCategoryError('');
+    if (clear) setCategories([]);
+
+    try {
+      const categoryList = await fetchCategoryList();
+      if (requestId === categoryRequestId.current) setCategories(categoryList);
+      return categoryList;
+    } catch (err) {
+      console.error('Failed to fetch categories', err);
+      if (requestId === categoryRequestId.current) {
+        setCategories([]);
+        setCategoryError(getApiErrorMessage(err, 'Failed to load categories.'));
+      }
+      return null;
+    } finally {
+      if (requestId === categoryRequestId.current) setCategoriesLoading(false);
+    }
+  };
+
   const fetchData = async ({ silent = false } = {}) => {
+    const categoriesRequest = loadCategories();
     try {
       if (!silent) setLoading(true);
-      const [prodRes, catRes] = await Promise.all([cachedGet('/admin/products'), cachedGet('/admin/categories')]);
+      const [prodRes] = await Promise.all([cachedGet('/admin/products'), categoriesRequest]);
       const productList = prodRes.data?.data ?? prodRes.data;
-      const categoryList = catRes.data?.data ?? catRes.data;
-      if (!Array.isArray(productList) || !Array.isArray(categoryList)) {
-        throw new Error('The API returned an invalid products or categories response.');
+      if (!Array.isArray(productList)) {
+        throw new Error('The API returned an invalid products response.');
       }
       setProducts(productList);
-      setCategories(categoryList);
       setLoadError('');
     } catch (err) {
       console.error('Failed to fetch products or categories', err);
       setProducts([]);
-      setCategories([]);
       setLoadError(getApiErrorMessage(err, 'Failed to load products and categories.'));
     } finally {
       setLoading(false);
@@ -99,6 +130,7 @@ export default function ProductsPage() {
     setForm({ ...EMPTY_FORM, categoryId: cat === 'all' ? '' : cat });
     setError('');
     setShowPanel(true);
+    loadCategories({ clear: true });
   };
 
   const openEdit = (product) => {
@@ -112,6 +144,7 @@ export default function ProductsPage() {
     });
     setError('');
     setShowPanel(true);
+    loadCategories({ clear: true });
   };
 
   const handleSaveProduct = async (e) => {
@@ -270,7 +303,20 @@ export default function ProductsPage() {
                 </button>
               </div>
 
-              {error && <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{error}</div>}
+              {(error || categoryError) && (
+                <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                  {error || categoryError}
+                  {categoryError && (
+                    <button
+                      type="button"
+                      onClick={() => loadCategories({ clear: true })}
+                      className="ml-2 font-semibold underline"
+                    >
+                      Retry
+                    </button>
+                  )}
+                </div>
+              )}
 
               <Thumb src={form.imageUrl} className="mt-4 aspect-[4/3] w-full rounded-xl" />
 
@@ -280,8 +326,16 @@ export default function ProductsPage() {
                     onChange={(e) => setField('name', e.target.value)} placeholder="Iced latte" />
                 </label>
                 <label className="block text-sm font-medium text-stone-700">Category
-                  <select className={`${input} mt-1`} required value={form.categoryId} onChange={(e) => setField('categoryId', e.target.value)}>
-                    <option value="">Select a category</option>
+                  <select className={`${input} mt-1`} required value={form.categoryId} onChange={(e) => setField('categoryId', e.target.value)} disabled={categoriesLoading}>
+                    <option value="">
+                      {categoriesLoading
+                        ? 'Loading categories...'
+                        : categoryError
+                          ? 'Categories unavailable'
+                          : categories.length
+                            ? 'Select a category'
+                            : 'No categories available'}
+                    </option>
                     {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </label>
