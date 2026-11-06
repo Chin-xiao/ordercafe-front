@@ -22,6 +22,8 @@ export default function StoresManagementPage() {
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [editingStore, setEditingStore] = useState(null);
+  const [editFormData, setEditFormData] = useState({ auto_seed_categories: true });
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -89,6 +91,43 @@ export default function StoresManagementPage() {
     } catch (err) {
       console.error('Failed to create store', err);
       setError(getApiErrorMessage(err, 'Failed to create the store.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openEditStore = (store) => {
+    setEditingStore(store);
+    setEditFormData({
+      auto_seed_categories:
+        store.auto_seed_categories == null
+          ? true
+          : store.auto_seed_categories === true ||
+            store.auto_seed_categories === 1 ||
+            store.auto_seed_categories === '1',
+    });
+    setError('');
+    setSuccessMsg('');
+  };
+
+  const handleUpdateStore = async (e) => {
+    e.preventDefault();
+    if (!editingStore) return;
+
+    setError('');
+    setSuccessMsg('');
+    setSubmitting(true);
+
+    try {
+      const res = await api.patch(`/super-admin/stores/${editingStore.id}`, {
+        auto_seed_categories: editFormData.auto_seed_categories,
+      });
+      setSuccessMsg(res.data?.message || 'Store settings updated successfully.');
+      setEditingStore(null);
+      await fetchStores();
+    } catch (err) {
+      console.error('Failed to update store settings', err);
+      setError(getApiErrorMessage(err, 'Failed to update store settings.'));
     } finally {
       setSubmitting(false);
     }
@@ -272,6 +311,7 @@ export default function StoresManagementPage() {
                 <th className={`${th} text-center`}>Orders</th>
                 <th className={th}>Status</th>
                 <th className={th}>Created Date</th>
+                <th className={`${th} text-right`}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
@@ -356,13 +396,23 @@ export default function StoresManagementPage() {
                     <td className={`${td} text-xs text-stone-400`}>
                       {store.created_at ? new Date(store.created_at).toLocaleDateString() : '—'}
                     </td>
+
+                    <td className={`${td} text-right`}>
+                      <button
+                        type="button"
+                        onClick={() => openEditStore(store)}
+                        className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:border-stone-300 hover:bg-stone-50"
+                      >
+                        Edit
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
 
               {filteredStores.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={9}>
+                  <td colSpan={10}>
                     <EmptyState
                       icon="store"
                       title={search ? 'No matching stores found' : 'No store systems created yet'}
@@ -569,6 +619,77 @@ export default function StoresManagementPage() {
                   className="inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 bg-[#ef5a3c] text-white hover:bg-[#dc4a2c] disabled:cursor-not-allowed disabled:opacity-50 shadow-sm"
                 >
                   {submitting ? 'Creating System...' : 'Create Store System'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingStore && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg rounded-3xl border border-stone-100 bg-white p-6 shadow-2xl sm:p-7">
+            <div className="mb-5 flex items-start justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-stone-900">Edit Store Settings</h2>
+                <p className="mt-1 text-xs text-stone-500">{editingStore.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingStore(null)}
+                disabled={submitting}
+                className="rounded-full p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-600 disabled:opacity-50"
+                aria-label="Close edit store settings"
+              >
+                <Icon name="close" size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateStore} className="space-y-5">
+              {error && (
+                <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                  {error}
+                </div>
+              )}
+              <label
+                htmlFor="edit-auto-seed-categories"
+                className={`flex cursor-pointer items-center justify-between gap-3 rounded-2xl border p-3.5 transition-all ${
+                  editFormData.auto_seed_categories
+                    ? 'border-emerald-200 bg-emerald-50/60 ring-1 ring-emerald-500/20'
+                    : 'border-stone-200 bg-stone-50/70'
+                }`}
+              >
+                <span className="text-xs font-bold text-stone-900">
+                  Auto-create default categories (Drink &amp; Snacks)
+                </span>
+                <input
+                  id="edit-auto-seed-categories"
+                  type="checkbox"
+                  checked={editFormData.auto_seed_categories}
+                  onChange={(e) =>
+                    setEditFormData({
+                      ...editFormData,
+                      auto_seed_categories: e.target.checked,
+                    })
+                  }
+                  className="h-4 w-4 shrink-0 accent-emerald-600"
+                />
+              </label>
+
+              <div className="flex justify-end gap-2.5 border-t border-stone-100 pt-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => setEditingStore(null)}
+                  disabled={submitting}
+                >
+                  Cancel
+                </Button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="inline-flex items-center justify-center rounded-lg bg-[#ef5a3c] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#dc4a2c] focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {submitting ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>

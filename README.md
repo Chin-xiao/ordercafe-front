@@ -31,8 +31,13 @@ The UI uses the routes already present in this project:
 | `GET` | `/admin/reports/daily-orders` | Resolve today's default date and business timezone |
 | `GET` | `/admin/orders` | Load paginated order details and filtered summary metrics |
 | `GET` | `/admin/reports/products` | Load top-selling products for a date range |
+| `GET` | `/super-admin/stores` | List stores, including each store's `auto_seed_categories` value |
+| `POST` | `/super-admin/stores` | Create a store; accepts the `auto_seed_categories` boolean |
+| `PATCH` | `/super-admin/stores/{id}` | Update a store's `auto_seed_categories` boolean |
 
 The order total shown before checkout is an estimate. Laravel must recalculate prices from stored product records and reject orders after closure or expiration. Session refresh and the local countdown improve the UI but are not substitutes for server-side deadline enforcement.
+
+The Super Admin store form defaults `auto_seed_categories` to `true` for new stores and sends it with the create request. The store list must return the persisted boolean so the edit form can display its current value. Laravel must persist updates from `PATCH /super-admin/stores/{id}` and use the setting when provisioning a tenant: when enabled, create that store's default `Drink` and `Snacks` categories; when disabled, do not seed them.
 
 The Mini App requires a customer to choose a sugar percentage from the values returned as `sugar_percent_options`; it does not assume a default. Each saved order item carries its own `sugar_percent`, allowing the same product to appear in separate lines for different sugar levels. The checkout sends only product IDs, quantities, and sugar percentages; Laravel owns prices, Telegram customer identity, session validity, and the saved total.
 
