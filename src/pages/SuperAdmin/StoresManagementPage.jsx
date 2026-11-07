@@ -25,8 +25,11 @@ export default function StoresManagementPage() {
   const [editingStore, setEditingStore] = useState(null);
   const [editFormData, setEditFormData] = useState({ auto_seed_categories: true });
   const [paymentQrUrl, setPaymentQrUrl] = useState('');
+  const [qrImageFile, setQrImageFile] = useState(null);
+  const [qrPreviewUrl, setQrPreviewUrl] = useState('');
   const [paymentLink, setPaymentLink] = useState('');
-  const [savingPaymentSettings, setSavingPaymentSettings] = useState(false);
+  const [initialPaymentLink, setInitialPaymentLink] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [paymentSettingsError, setPaymentSettingsError] = useState('');
   const [paymentSettingsSuccess, setPaymentSettingsSuccess] = useState('');
   const [error, setError] = useState('');
@@ -64,6 +67,11 @@ export default function StoresManagementPage() {
   useEffect(() => {
     fetchStores();
   }, []);
+
+  useEffect(() => {
+    if (!qrPreviewUrl.startsWith('blob:')) return undefined;
+    return () => URL.revokeObjectURL(qrPreviewUrl);
+  }, [qrPreviewUrl]);
 
   const handleCreateStore = async (e) => {
     e.preventDefault();
@@ -113,38 +121,84 @@ export default function StoresManagementPage() {
             store.auto_seed_categories === 1 ||
             store.auto_seed_categories === '1',
     });
-    setPaymentQrUrl(
+    const savedQrUrl =
       owner?.payment_qr_url ??
         owner?.payment_qr_image_url ??
         paymentSettings.payment_qr_url ??
         paymentSettings.payment_qr_image_url ??
-        ''
-    );
-    setPaymentLink(owner?.payment_link ?? paymentSettings.payment_link ?? '');
+        '';
+    const savedPaymentLink = owner?.payment_link ?? paymentSettings.payment_link ?? '';
+    setPaymentQrUrl(savedQrUrl);
+    setQrImageFile(null);
+    setQrPreviewUrl(savedQrUrl);
+    setPaymentLink(savedPaymentLink);
+    setInitialPaymentLink(savedPaymentLink);
     setPaymentSettingsError('');
     setPaymentSettingsSuccess('');
     setError('');
     setSuccessMsg('');
   };
 
-  const handleSavePaymentSettings = async () => {
-    const owner = editingStore?.users?.[0];
-    if (!owner?.id) {
+  const uploadToCloudinary = async (file) => {
+    const cloudinaryFormData = new FormData();
+    cloudinaryFormData.append('file', file);
+    cloudinaryFormData.append('upload_preset', 'qr_uploads');
+
+    const response = await fetch(
+      'https://api.cloudinary.com/v1_1/djxniv0op/image/upload',
+      { method: 'POST', body: cloudinaryFormData }
+    );
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data?.error?.message || 'Cloudinary upload failed.');
+    }
+    if (!data?.secure_url) {
+      throw new Error('Cloudinary did not return a secure image URL.');
+    }
+
+    return data.secure_url;
+  };
+
+  const handleSavePayment = async (userId) => {
+    if (!userId) {
       setPaymentSettingsError('This store does not have an owner account to configure.');
+      return;
+    }
+
+    const trimmedPaymentLink = paymentLink.trim();
+    const shouldSavePaymentLink =
+      trimmedPaymentLink !== initialPaymentLink || Boolean(trimmedPaymentLink);
+
+    if (!qrImageFile && !shouldSavePaymentLink) {
+      setPaymentSettingsError('Choose a QR image or enter a payment link before saving.');
       return;
     }
 
     setPaymentSettingsError('');
     setPaymentSettingsSuccess('');
-    setSavingPaymentSettings(true);
+    setUploading(true);
 
     try {
-      const response = await api.post(`/admin/users/${owner.id}/payment-qr`, {
-        payment_qr_url: paymentQrUrl.trim(),
-        payment_link: paymentLink.trim(),
-      });
+      if (qrImageFile) {
+        const cloudinaryUrl = await uploadToCloudinary(qrImageFile);
+        await api.post(`/admin/users/${userId}/payment-qr`, {
+          payment_qr_url: cloudinaryUrl,
+        });
+        setPaymentQrUrl(cloudinaryUrl);
+        setQrPreviewUrl(cloudinaryUrl);
+        setQrImageFile(null);
+      }
+
+      if (shouldSavePaymentLink) {
+        await api.patch(`/admin/users/${userId}/payment-link`, {
+          payment_link: trimmedPaymentLink || null,
+        });
+        setInitialPaymentLink(trimmedPaymentLink);
+      }
+
       setPaymentSettingsSuccess(
-        response.data?.message || 'Payment configuration saved successfully.'
+        'Payment configuration saved successfully.'
       );
     } catch (err) {
       console.error('Failed to save payment settings', err);
@@ -152,7 +206,7 @@ export default function StoresManagementPage() {
         getApiErrorMessage(err, 'Failed to save payment configuration.')
       );
     } finally {
-      setSavingPaymentSettings(false);
+      setUploading(false);
     }
   };
 
@@ -742,32 +796,27 @@ export default function StoresManagementPage() {
                 )}
 
                 <div>
-                  <label htmlFor="payment-qr-url" className="mb-1 block text-xs font-semibold text-stone-700">
-                    Payment QR Image URL
+                  <label htmlFor="payment-qr-file" className="mb-1 block text-xs font-semibold text-stone-700">
+                    Payment QR Image
                   </label>
                   <input
-                    id="payment-qr-url"
-                    type="url"
-                    value={paymentQrUrl}
-                    onChange={(e) => setPaymentQrUrl(e.target.value)}
-                    placeholder="https://..."
+                    id="payment-qr-file"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      setQrImageFile(file);
+                      setQrPreviewUrl(file ? URL.createObjectURL(file) : paymentQrUrl);
+                    }}
                     className={`${inputClass} w-full`}
                   />
-                  {paymentQrUrl && (() => {
-                    try {
-                      const url = new URL(paymentQrUrl);
-                      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-                    } catch {
-                      return null;
-                    }
-                    return (
-                      <img
-                        src={paymentQrUrl}
-                        alt="Payment QR preview"
-                        className="mt-2 h-24 w-24 rounded-lg border border-stone-200 object-contain"
-                      />
-                    );
-                  })()}
+                  {qrPreviewUrl && (
+                    <img
+                      src={qrPreviewUrl}
+                      alt="Payment QR preview"
+                      className="mt-2 h-24 w-24 rounded-lg border border-stone-200 object-contain"
+                    />
+                  )}
                 </div>
 
                 <div>
@@ -776,7 +825,7 @@ export default function StoresManagementPage() {
                   </label>
                   <input
                     id="payment-link"
-                    type="url"
+                    type="text"
                     value={paymentLink}
                     onChange={(e) => setPaymentLink(e.target.value)}
                     placeholder="https://pay.ababank.com/..."
@@ -787,11 +836,11 @@ export default function StoresManagementPage() {
                 <div className="flex justify-end">
                   <button
                     type="button"
-                    onClick={handleSavePaymentSettings}
-                    disabled={savingPaymentSettings || submitting || !editingStore.users?.[0]?.id}
+                    onClick={() => handleSavePayment(editingStore.users?.[0]?.id)}
+                    disabled={uploading || submitting || !editingStore.users?.[0]?.id}
                     className="inline-flex items-center justify-center rounded-lg border border-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {savingPaymentSettings ? 'Saving...' : 'Save Payment Configuration'}
+                    {uploading ? 'Saving...' : 'Save Payment Settings'}
                   </button>
                 </div>
               </section>
@@ -800,13 +849,13 @@ export default function StoresManagementPage() {
                 <Button
                   variant="secondary"
                   onClick={() => setEditingStore(null)}
-                  disabled={submitting || savingPaymentSettings}
+                  disabled={submitting || uploading}
                 >
                   Cancel
                 </Button>
                 <button
                   type="submit"
-                  disabled={submitting || savingPaymentSettings}
+                  disabled={submitting || uploading}
                   className="inline-flex items-center justify-center rounded-lg bg-[#ef5a3c] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#dc4a2c] focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {submitting ? 'Saving...' : 'Save Changes'}
